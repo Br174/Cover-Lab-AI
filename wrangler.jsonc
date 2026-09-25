@@ -19,5 +19,24 @@
     "LINGUA_INTERFACCIA": "it",
     "MASSIMO_OPERE_DERIVATE_PER_GIRO": "2",
     "MASSIMO_CANDIDATI_IA_PER_GIRO": "12"
+  },
+  "previews": {
+    "ai": {
+      "binding": "AI"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "cover-lab-ai-db",
+        "database_id": "4a1c0fa1-f1d0-46c8-964e-f5f2763b2c9a"
+      }
+    ],
+    "vars": {
+      "VERSIONE_MOTORE": "0.2.0",
+      "MODELLO_CLASSIFICAZIONE": "@cf/zai-org/glm-4.7-flash",
+      "LINGUA_INTERFACCIA": "it",
+      "MASSIMO_OPERE_DERIVATE_PER_GIRO": "2",
+      "MASSIMO_CANDIDATI_IA_PER_GIRO": "12"
+    }
   }
 }

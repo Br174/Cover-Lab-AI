@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "it.coverlab.ai"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "it.coverlab.ai"

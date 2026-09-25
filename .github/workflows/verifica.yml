@@ -17,11 +17,10 @@ jobs:
       - name: Scarica il codice
         uses: actions/checkout@v4
 
-      - name: Configura Node.js e cache
+      - name: Configura Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Installa dipendenze
         run: npm install

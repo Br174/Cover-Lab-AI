@@ -7,6 +7,7 @@ import {
   leggiStatoScoperta,
   leggiStrategieNote,
   leggiCandidatiNoti,
+  esisteCandidatoScoperta,
   salvaStrategieScoperta,
   salvaCandidatoScoperta,
   salvaFonteCandidato,
@@ -46,16 +47,9 @@ async function generaNuovePiste(originale, env, db, chiave) {
   const strategieNuove = await salvaStrategieScoperta(db, chiave, piano.strategie || []);
   let candidatiNuovi = 0;
   for (const candidato of piano.candidati || []) {
-    const prima = await db.prepare(`
-      SELECT id FROM candidati_scoperta
-      WHERE chiave_composizione=?1 AND chiave_candidato=?2
-      LIMIT 1
-    `).bind(
-      chiave,
-      `${String(candidato.titolo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim()}::${String(candidato.interprete || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim()}::${candidato.anno ?? ''}`
-    ).first();
+    const esisteva = await esisteCandidatoScoperta(db, chiave, candidato);
     await salvaCandidatoScoperta(db, chiave, candidato, 'ia');
-    if (!prima) candidatiNuovi += 1;
+    if (!esisteva) candidatiNuovi += 1;
   }
 
   await registraGiroIA(db, chiave, { esaurita: piano.esaurita === true });
@@ -80,7 +74,8 @@ async function processaYouTube(originale, env, db, chiave, massimoStrategie) {
         stato: 'attesa_provider',
         cursore: strategia.cursore || null,
         candidatiAggiunti: 0,
-        errore: null
+        errore: null,
+        incrementaPagina: false
       });
     }
     return {
@@ -111,9 +106,10 @@ async function processaYouTube(originale, env, db, chiave, massimoStrategie) {
       for (const candidato of interpretati) {
         const elemento = pagina.elementi[candidato.indice];
         if (!elemento) continue;
+        const esisteva = await esisteCandidatoScoperta(db, chiave, candidato);
         const candidatoId = await salvaCandidatoScoperta(db, chiave, candidato, 'youtube');
         if (!candidatoId) continue;
-        candidatiSalvati += 1;
+        if (!esisteva) candidatiSalvati += 1;
         await salvaFonteCandidato(db, candidatoId, {
           fonte: 'youtube',
           idEsterno: elemento.idEsterno,
@@ -129,7 +125,8 @@ async function processaYouTube(originale, env, db, chiave, massimoStrategie) {
         stato: pagina.prossimoCursore ? 'continua' : 'esaurita',
         cursore: pagina.prossimoCursore || null,
         candidatiAggiunti: interpretati.length,
-        errore: null
+        errore: null,
+        incrementaPagina: true
       });
       strategieElaborate += 1;
     } catch (e) {
@@ -138,7 +135,8 @@ async function processaYouTube(originale, env, db, chiave, massimoStrategie) {
         stato: transitorio ? 'continua' : 'errore',
         cursore: strategia.cursore || null,
         candidatiAggiunti: 0,
-        errore: String(e?.message || 'Errore YouTube non specificato').slice(0, 1000)
+        errore: String(e?.message || 'Errore YouTube non specificato').slice(0, 1000),
+        incrementaPagina: false
       });
     }
   }

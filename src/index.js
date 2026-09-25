@@ -1,7 +1,6 @@
 import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
 import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
-import { migraArchivioVivoLab, statoArchivioVivoLab } from './dati/lab-migra-archivio-vivo.js';
 
 const INTESTAZIONI = {
   'content-type': 'application/json; charset=utf-8',
@@ -61,34 +60,6 @@ export default {
         archivioVivo: 'predisposto',
         lottoMusicLab: 20
       });
-    }
-
-    // Endpoint LAB temporanei: verranno eliminati subito dopo la verifica del D1 remoto.
-    if (request.method === 'GET' && url.pathname === '/__lab-archivio-vivo-migra') {
-      try {
-        return json(await migraArchivioVivoLab(env.DB));
-      } catch (e) {
-        console.error(e);
-        return errore('Migrazione LAB Archivio Vivo non completata.', 500, e?.message || 'Errore non specificato');
-      }
-    }
-
-    if (request.method === 'GET' && url.pathname === '/__lab-archivio-vivo-giro') {
-      try {
-        return json(await eseguiArchivioVivo(env, { massimoVoci: 1 }));
-      } catch (e) {
-        console.error(e);
-        return errore('Giro LAB Archivio Vivo non completato.', 500, e?.message || 'Errore non specificato');
-      }
-    }
-
-    if (request.method === 'GET' && url.pathname === '/__lab-archivio-vivo-stato') {
-      try {
-        return json(await statoArchivioVivoLab(env.DB));
-      } catch (e) {
-        console.error(e);
-        return errore('Stato LAB Archivio Vivo non disponibile.', 500, e?.message || 'Errore non specificato');
-      }
     }
 
     if (request.method === 'GET' && url.pathname === '/api/versioni') {
@@ -164,6 +135,8 @@ export default {
           motivo: 'richiesta diretta Music Lab'
         }));
 
+        // Se abbiamo risposto dalla memoria, la risposta resta immediata ma parte
+        // anche un controllo fresco in rete senza bloccare Music Lab.
         if (!parametri.approfondisci && risultato?.provenienza === 'memoria dei risultati') {
           programma(ctx, cercaVersioni({
             ...parametri,

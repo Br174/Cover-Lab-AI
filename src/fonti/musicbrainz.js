@@ -16,11 +16,28 @@ async function richiesta(url, fetchFn = fetch) {
   const risposta = await fetchFn(url, {
     headers: {
       'Accept': 'application/json',
-      'User-Agent': 'CoverLabAI/0.2 (https://github.com/Br174)'
+      'User-Agent': 'CoverLabAI/0.2 (https://github.com/Br174/Cover-Lab-AI)'
     }
   });
   if (!risposta.ok) throw new Error(`MusicBrainz ha risposto ${risposta.status}`);
   return risposta.json();
+}
+
+function normalizzaConfronto(valore) {
+  return String(valore || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’‘`]/g, "'")
+    .toLocaleLowerCase('it')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fraseLucene(valore) {
+  return String(valore || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .trim();
 }
 
 function creditoArtista(recording) {
@@ -76,30 +93,109 @@ function estraiOpereDerivate(opera) {
   return risultato;
 }
 
-export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
-  const q = `recording:\"${titolo.replaceAll('"', '')}\" AND artist:\"${artista.replaceAll('"', '')}\"`;
-  const ricerca = await richiesta(`${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=5`, fetchFn);
-  const migliore = (ricerca.recordings || []).sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0];
-  if (!migliore) return null;
+function compositoriOpera(opera) {
+  return (opera?.relations || [])
+    .filter(r => ['composer', 'lyricist and composer'].includes(r.type) && r.artist)
+    .map(r => r.artist.name)
+    .filter(Boolean)
+    .join(', ') || null;
+}
 
-  const dettaglio = await richiesta(`${BASE}/recording/${migliore.id}?inc=work-rels+artist-credits+releases&fmt=json`, fetchFn);
-  const relazione = relazioneOpera(dettaglio);
-  if (!relazione?.work?.id) return null;
-
-  const opera = await richiesta(`${BASE}/work/${relazione.work.id}?inc=aliases+artist-rels+work-rels&fmt=json`, fetchFn);
+async function dettaglioOpera(idOpera, titoloRichiesto, artistaRichiesto, fetchFn, extra = {}) {
+  const opera = await richiesta(
+    `${BASE}/work/${idOpera}?inc=aliases+artist-rels+work-rels&fmt=json`,
+    fetchFn
+  );
   return {
     idMusicBrainz: opera.id,
-    titoloCanonico: opera.title || titolo,
-    artistaOriginale: artista,
-    annoOriginale: annoDaRelease(dettaglio),
+    titoloCanonico: opera.title || titoloRichiesto,
+    artistaOriginale: artistaRichiesto,
+    annoOriginale: extra.annoOriginale ?? null,
     linguaOriginale: opera.language || null,
-    compositore: (opera.relations || [])
-      .filter(r => ['composer', 'lyricist and composer'].includes(r.type) && r.artist)
-      .map(r => r.artist.name)
-      .join(', ') || null,
+    compositore: compositoriOpera(opera),
     opereDerivate: estraiOpereDerivate(opera),
-    registrazioneRiferimento: dettaglio.id
+    registrazioneRiferimento: extra.registrazioneRiferimento || null,
+    metodoIndividuazione: extra.metodoIndividuazione || 'opera'
   };
+}
+
+function opereEsatte(ricerca, titolo) {
+  const atteso = normalizzaConfronto(titolo);
+  return (ricerca?.works || [])
+    .filter(w => Number(w.score || 0) >= 90 && normalizzaConfronto(w.title) === atteso)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+}
+
+async function cercaOperaDiretta(titolo, artista, fetchFn) {
+  const q = `work:\"${fraseLucene(titolo)}\" AND artist:\"${fraseLucene(artista)}\"`;
+  const ricerca = await richiesta(
+    `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=5`,
+    fetchFn
+  );
+  const esatte = opereEsatte(ricerca, titolo);
+  if (!esatte.length) return null;
+  return dettaglioOpera(esatte[0].id, titolo, artista, fetchFn, {
+    metodoIndividuazione: 'opera per titolo e artista'
+  });
+}
+
+async function cercaOperaDaRegistrazioni(titolo, artista, fetchFn) {
+  const q = `recording:\"${fraseLucene(titolo)}\" AND artist:\"${fraseLucene(artista)}\"`;
+  const ricerca = await richiesta(
+    `${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
+    fetchFn
+  );
+
+  const titoloAtteso = normalizzaConfronto(titolo);
+  const artistaAtteso = normalizzaConfronto(artista);
+  const candidati = (ricerca.recordings || [])
+    .filter(r => normalizzaConfronto(r.title) === titoloAtteso)
+    .filter(r => !artistaAtteso || normalizzaConfronto(creditoArtista(r)) === artistaAtteso)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 5);
+
+  for (const candidato of candidati) {
+    const dettaglio = await richiesta(
+      `${BASE}/recording/${candidato.id}?inc=work-rels+artist-credits+releases&fmt=json`,
+      fetchFn
+    );
+    const relazione = relazioneOpera(dettaglio);
+    if (!relazione?.work?.id) continue;
+    return dettaglioOpera(relazione.work.id, titolo, artista, fetchFn, {
+      annoOriginale: annoDaRelease(dettaglio),
+      registrazioneRiferimento: dettaglio.id,
+      metodoIndividuazione: 'registrazione collegata a opera'
+    });
+  }
+  return null;
+}
+
+async function cercaOperaUnicaPerTitolo(titolo, artista, fetchFn) {
+  const q = `work:\"${fraseLucene(titolo)}\"`;
+  const ricerca = await richiesta(
+    `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
+    fetchFn
+  );
+  const esatte = opereEsatte(ricerca, titolo);
+  if (esatte.length !== 1) return null;
+  return dettaglioOpera(esatte[0].id, titolo, artista, fetchFn, {
+    metodoIndividuazione: 'opera unica per titolo'
+  });
+}
+
+export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
+  // Percorso rapido: quando MusicBrainz collega l'artista direttamente all'opera
+  // (compositore, autore, ecc.), bastano ricerca opera + dettaglio opera.
+  const diretta = await cercaOperaDiretta(titolo, artista, fetchFn);
+  if (diretta) return diretta;
+
+  // Percorso robusto: non ci si ferma al primo recording con punteggio alto.
+  // Si scorrono più candidati fino a trovare una relazione performance -> opera.
+  const daRegistrazione = await cercaOperaDaRegistrazioni(titolo, artista, fetchFn);
+  if (daRegistrazione) return daRegistrazione;
+
+  // Ultima possibilità sicura: titolo che identifica una sola opera esatta.
+  return cercaOperaUnicaPerTitolo(titolo, artista, fetchFn);
 }
 
 export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite = 100, offset = 0, metadatiOpera = {}) {

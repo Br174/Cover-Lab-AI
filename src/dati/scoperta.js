@@ -10,6 +10,14 @@ export function chiaveComposizione(titolo, artista = '') {
   return creaChiaveRicerca(titolo, artista);
 }
 
+export function chiaveCandidato(candidato = {}) {
+  return creaChiaveDuplicato({
+    titolo: candidato.titolo || '',
+    interprete: candidato.interprete || '',
+    anno: candidato.anno || null
+  });
+}
+
 export async function leggiStatoScoperta(db, chiave) {
   if (!db) return null;
   return db.prepare(
@@ -50,6 +58,17 @@ export async function leggiCandidatiNoti(db, chiave, limite = 200) {
   return risultato.results || [];
 }
 
+export async function esisteCandidatoScoperta(db, chiave, candidato) {
+  if (!db || !candidato?.titolo) return false;
+  const riga = await db.prepare(`
+    SELECT 1 AS presente
+    FROM candidati_scoperta
+    WHERE chiave_composizione=?1 AND chiave_candidato=?2
+    LIMIT 1
+  `).bind(chiave, chiaveCandidato(candidato)).first();
+  return Boolean(riga?.presente);
+}
+
 export async function salvaStrategieScoperta(db, chiave, strategie = []) {
   if (!db || !strategie.length) return 0;
   let inserite = 0;
@@ -75,11 +94,7 @@ export async function salvaStrategieScoperta(db, chiave, strategie = []) {
 
 export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'ia') {
   if (!db || !candidato?.titolo) return null;
-  const chiaveCandidato = creaChiaveDuplicato({
-    titolo: candidato.titolo,
-    interprete: candidato.interprete || '',
-    anno: candidato.anno || null
-  });
+  const chiaveDuplicato = chiaveCandidato(candidato);
   const id = crypto.randomUUID();
 
   await db.prepare(`
@@ -95,7 +110,7 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
       affidabilita_proposta=MAX(candidati_scoperta.affidabilita_proposta, excluded.affidabilita_proposta),
       ultima_verifica=CURRENT_TIMESTAMP
   `).bind(
-    id, chiave, chiaveCandidato, candidato.titolo,
+    id, chiave, chiaveDuplicato, candidato.titolo,
     candidato.interprete || null, candidato.anno || null,
     candidato.lingua || null, candidato.paese || null,
     candidato.tipo || candidato.tipoProposto || null,
@@ -107,7 +122,7 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
     SELECT id FROM candidati_scoperta
     WHERE chiave_composizione=?1 AND chiave_candidato=?2
     LIMIT 1
-  `).bind(chiave, chiaveCandidato).first();
+  `).bind(chiave, chiaveDuplicato).first();
   return riga?.id || id;
 }
 
@@ -172,19 +187,27 @@ export async function aggiornaStrategia(db, id, {
   stato,
   cursore = null,
   candidatiAggiunti = 0,
-  errore = null
+  errore = null,
+  incrementaPagina = true
 }) {
   if (!db || !id) return;
   await db.prepare(`
     UPDATE strategie_scoperta
     SET stato=?2,
         cursore=?3,
-        pagine_analizzate=pagine_analizzate+1,
-        candidati_trovati=candidati_trovati+?4,
-        ultimo_errore=?5,
+        pagine_analizzate=pagine_analizzate+?4,
+        candidati_trovati=candidati_trovati+?5,
+        ultimo_errore=?6,
         aggiornata_il=CURRENT_TIMESTAMP
     WHERE id=?1
-  `).bind(id, stato, cursore, Number(candidatiAggiunti || 0), errore).run();
+  `).bind(
+    id,
+    stato,
+    cursore,
+    incrementaPagina ? 1 : 0,
+    Number(candidatiAggiunti || 0),
+    errore
+  ).run();
 }
 
 export async function registraGiroIA(db, chiave, { esaurita = false } = {}) {

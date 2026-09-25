@@ -2,6 +2,7 @@ import { individuaComposizione, elencaRegistrazioniOpera, approfondisciOpereDeri
 import { classificaDaMetadati, applicaAdattamentoSeNecessario } from './classificazione.js';
 import { deduplicaVersioni } from './deduplicazione.js';
 import { verificaCandidatiConIA } from './verifica-intelligente.js';
+import { normalizzaTesto } from './normalizzazione.js';
 import { trovaComposizione, salvaComposizione, salvaVersioni, caricaVersioni, registraRicerca, salvaOpereCollegate } from '../dati/archivio.js';
 
 function composizioneDaRiga(riga) {
@@ -25,6 +26,17 @@ function ordina(versioni, ordine) {
     if (a.anno !== b.anno) return ((a.anno || 0) - (b.anno || 0)) * segno;
     return a.interprete.localeCompare(b.interprete, 'it');
   });
+}
+
+function completaAnnoOriginale(scoperta, registrazioni, artistaRichiesto) {
+  if (scoperta.annoOriginale) return scoperta;
+  const artista = normalizzaTesto(artistaRichiesto);
+  const anni = (registrazioni || [])
+    .filter(r => normalizzaTesto(r.interprete) === artista)
+    .map(r => Number(r.anno || 0))
+    .filter(a => a > 0);
+  if (anni.length) scoperta.annoOriginale = Math.min(...anni);
+  return scoperta;
 }
 
 function classificaElenco(elenco, riferimento) {
@@ -85,6 +97,7 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
     titolo: scoperta.titoloCanonico,
     lingua: scoperta.linguaOriginale
   });
+  completaAnnoOriginale(scoperta, elencoBase.registrazioni, artista);
 
   const riferimento = {
     titolo: scoperta.titoloCanonico,
@@ -139,7 +152,8 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
       compositore: scoperta.compositore,
       anno: scoperta.annoOriginale,
       lingua: scoperta.linguaOriginale,
-      idMusicBrainz: scoperta.idMusicBrainz
+      idMusicBrainz: scoperta.idMusicBrainz,
+      metodoIndividuazione: scoperta.metodoIndividuazione || null
     },
     versioniIndividuate: versioni.length,
     versioni,

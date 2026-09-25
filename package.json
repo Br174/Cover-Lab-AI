@@ -1,0 +1,18 @@
+{
+  "name": "cover-lab-ai",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Motore italiano per individuare, classificare e catalogare versioni di composizioni musicali.",
+  "scripts": {
+    "test": "node --test",
+    "sviluppo": "wrangler dev",
+    "pubblica": "wrangler deploy",
+    "db:crea": "node scripts/configura-d1.mjs",
+    "db:migra:locale": "wrangler d1 migrations apply cover-lab-ai-db --local",
+    "db:migra": "wrangler d1 migrations apply cover-lab-ai-db --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

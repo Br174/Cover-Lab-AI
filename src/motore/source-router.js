@@ -44,15 +44,16 @@ export async function scegliProviderScoperta(db, nomeStrategia, env = {}, opzion
   return ordinati[0] || null;
 }
 
-export async function eseguiRicercaProvider({
+export async function eseguiOperazioneProvider({
   db,
   provider,
-  richiesta,
+  operazione,
   configurazione = {},
-  oraMs = Date.now()
+  oraMs = Date.now(),
+  contaRisultati = () => 0
 }) {
-  if (!provider || typeof provider.cerca !== 'function') {
-    return { stato: 'provider_non_disponibile', provider: provider?.id || null, elementi: [] };
+  if (!provider?.id || typeof operazione !== 'function') {
+    return { stato: 'provider_non_disponibile', provider: provider?.id || null, saltato: true };
   }
 
   const statoDichiarato = provider.stato?.() || { disponibile: true, stato: 'configurato' };
@@ -61,8 +62,7 @@ export async function eseguiRicercaProvider({
     return {
       stato: statoDichiarato.stato || 'non_disponibile',
       provider: provider.id,
-      saltato: true,
-      elementi: []
+      saltato: true
     };
   }
 
@@ -72,8 +72,7 @@ export async function eseguiRicercaProvider({
       stato: 'sospeso_circuit_breaker',
       provider: provider.id,
       saltato: true,
-      sospesoFino: circuito.sospesoFino,
-      elementi: []
+      sospesoFino: circuito.sospesoFino
     };
   }
 
@@ -85,16 +84,16 @@ export async function eseguiRicercaProvider({
   const inizio = Date.now();
 
   try {
-    const pagina = await provider.cerca(richiesta, { signal: controller.signal });
+    const valore = await operazione({ signal: controller.signal });
     const durataMs = Date.now() - inizio;
-    const elementi = Array.isArray(pagina?.elementi) ? pagina.elementi : [];
-    await registraSuccessoProvider(db, provider.id, { durataMs, risultati: elementi.length });
+    const risultati = Math.max(0, Number(contaRisultati(valore) || 0));
+    await registraSuccessoProvider(db, provider.id, { durataMs, risultati });
     return {
-      ...pagina,
-      stato: pagina?.stato || 'ok',
+      stato: 'ok',
       provider: provider.id,
       durataMs,
-      saltato: false
+      saltato: false,
+      valore
     };
   } catch (e) {
     const durataMs = Date.now() - inizio;
@@ -117,10 +116,43 @@ export async function eseguiRicercaProvider({
       saltato: false,
       errore: messaggio,
       codiceErrore: codice,
-      durataMs,
-      elementi: []
+      durataMs
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function eseguiRicercaProvider({
+  db,
+  provider,
+  richiesta,
+  configurazione = {},
+  oraMs = Date.now()
+}) {
+  if (!provider || typeof provider.cerca !== 'function') {
+    return { stato: 'provider_non_disponibile', provider: provider?.id || null, elementi: [] };
+  }
+
+  const esito = await eseguiOperazioneProvider({
+    db,
+    provider,
+    configurazione,
+    oraMs,
+    operazione: ({ signal }) => provider.cerca(richiesta, { signal }),
+    contaRisultati: pagina => Array.isArray(pagina?.elementi) ? pagina.elementi.length : 0
+  });
+
+  if (esito.stato !== 'ok') {
+    return { ...esito, elementi: [] };
+  }
+
+  const pagina = esito.valore || {};
+  return {
+    ...pagina,
+    stato: pagina?.stato || 'ok',
+    provider: provider.id,
+    durataMs: esito.durataMs,
+    saltato: false
+  };
 }

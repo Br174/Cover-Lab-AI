@@ -10,6 +10,10 @@ import {
   salvaFontiVersione,
   salvaCreditiVersione
 } from '../dati/versioni-verificate.js';
+import {
+  individuaConflittiTraCandidatoEVerifica,
+  salvaConflittiVersione
+} from '../dati/conflitti-versione.js';
 import { verificaCandidatoSuMusicBrainz } from '../fonti/musicbrainz-verifica.js';
 
 function limita(n, min = 0, max = 100) {
@@ -152,6 +156,12 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
     if (strutturata?.fonte) fontiFinali.push(strutturata.fonte);
     await salvaFontiVersione(db, versioneId, fontiFinali);
 
+    let conflitti = [];
+    if (strutturata?.verificato && strutturata?.versione) {
+      conflitti = individuaConflittiTraCandidatoEVerifica(candidato, strutturata.versione, fonti);
+      await salvaConflittiVersione(db, versioneId, conflitti);
+    }
+
     const crediti = [...(strutturata?.crediti || [])];
     if (composizione.compositore) {
       for (const nome of String(composizione.compositore).split(',').map(x => x.trim()).filter(Boolean)) {
@@ -176,6 +186,8 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       interprete: versione.interprete,
       stato: 'verificato',
       affidabilita: valutazione.affidabilita,
+      statoVerifica: versione.statoVerifica || 'verificato_multifonte',
+      conflittiAperti: conflitti.length,
       versioneId,
       metodo: valutazione.metodo
     });

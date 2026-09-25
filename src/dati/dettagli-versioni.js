@@ -1,3 +1,5 @@
+import { applicaPolicyMusicLab } from '../motore/policy-fonti-media.js';
+
 function raggruppa(righe = []) {
   const mappa = new Map();
   for (const riga of righe) {
@@ -9,9 +11,9 @@ function raggruppa(righe = []) {
 }
 
 export async function aggiungiFontiECrediti(db, versioni = []) {
-  if (!db || !versioni.length) return versioni;
+  if (!db || !versioni.length) return versioni.map(applicaPolicyMusicLab);
   const ids = versioni.map(v => v.id).filter(Boolean);
-  if (!ids.length) return versioni;
+  if (!ids.length) return versioni.map(applicaPolicyMusicLab);
   const segnaposto = ids.map((_, i) => `?${i + 1}`).join(',');
 
   let fonti = [];
@@ -42,7 +44,7 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
 
   const fontiPerVersione = raggruppa(fonti);
   const creditiPerVersione = raggruppa(crediti);
-  return versioni.map(versione => ({
+  return versioni.map(versione => applicaPolicyMusicLab({
     ...versione,
     fonti: (fontiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto),
     crediti: (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)

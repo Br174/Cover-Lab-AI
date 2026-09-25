@@ -1,6 +1,6 @@
 name: Prova reale temporanea Cover Lab AI
 
-# Rilancio dopo introduzione retry automatico del provider MusicBrainz.
+# Rilancio dopo correzione del browse registrazioni MusicBrainz.
 on:
   push:
     branches:

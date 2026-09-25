@@ -26,6 +26,12 @@ function intero(valore, ripiego, massimo = 50) {
   return Math.min(massimo, Math.floor(n));
 }
 
+function annoDaData(valore) {
+  const testo = String(valore || '');
+  const match = testo.match(/^(\d{4})/);
+  return match ? Number(match[1]) : null;
+}
+
 async function generaNuovePiste(originale, env, db, chiave) {
   const stato = await leggiStatoScoperta(db, chiave);
   if (Number(stato?.ia_esaurita || 0) === 1) {
@@ -143,13 +149,19 @@ async function processaCataloghiApple(originale, env, db, chiave, massimoStrateg
       for (const candidato of interpretati) {
         const elemento = pagina.elementi[candidato.indice];
         if (!elemento) continue;
-        const esisteva = await esisteCandidatoScoperta(db, chiave, candidato);
-        const candidatoId = await salvaCandidatoScoperta(db, chiave, {
+        const candidatoNormalizzato = {
           ...candidato,
-          interprete: candidato.interprete || elemento.interprete,
-          anno: candidato.anno || (String(elemento.dataPubblicazione || '').slice(0, 4) || null),
+          interprete: candidato.interprete || elemento.interprete || null,
+          anno: candidato.anno || annoDaData(elemento.dataPubblicazione),
           paese: candidato.paese || elemento.paese || null
-        }, 'apple_catalogo');
+        };
+        const esisteva = await esisteCandidatoScoperta(db, chiave, candidatoNormalizzato);
+        const candidatoId = await salvaCandidatoScoperta(
+          db,
+          chiave,
+          candidatoNormalizzato,
+          'apple_catalogo'
+        );
         if (!candidatoId) continue;
         if (!esisteva) candidatiSalvati += 1;
         await salvaFonteCandidato(db, candidatoId, {

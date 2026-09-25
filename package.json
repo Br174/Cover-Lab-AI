@@ -1,6 +1,6 @@
 {
   "name": "cover-lab-ai",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Motore AI multi-fonte per individuare, verificare e catalogare quante piu versioni possibili di composizioni musicali.",

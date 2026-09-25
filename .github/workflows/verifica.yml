@@ -33,14 +33,21 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
 
-      - name: Inizializza D1 tramite anteprima LAB
+      - name: Diagnostica inizializzazione D1 tramite anteprima LAB
         if: github.event_name == 'push' && github.ref == 'refs/heads/lab/uab-onboarding-01'
         shell: bash
         run: |
           set -euo pipefail
           URL="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev/__inizializza-d1-cover-lab-ai"
-          curl --fail --silent --show-error --retry 18 --retry-delay 5 --retry-all-errors "$URL" -o /tmp/d1-risultato.json
+          CODICE="$(curl --silent --show-error --retry 6 --retry-delay 4 --retry-all-errors -o /tmp/d1-risultato.json -w '%{http_code}' "$URL")"
+          echo "Codice HTTP: $CODICE"
+          echo "Risposta Worker:"
           cat /tmp/d1-risultato.json
+          echo
+          if [ "$CODICE" != "200" ]; then
+            echo "Inizializzazione D1 non riuscita: raccolta diagnostica completata."
+            exit 1
+          fi
           grep -q '"stato": "ok"' /tmp/d1-risultato.json
           grep -q '"composizioni"' /tmp/d1-risultato.json
           grep -q '"versioni"' /tmp/d1-risultato.json

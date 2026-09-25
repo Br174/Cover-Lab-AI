@@ -127,7 +127,7 @@ function opereEsatte(ricerca, titolo) {
 }
 
 async function cercaOperaDiretta(titolo, artista, fetchFn) {
-  const q = `work:\"${fraseLucene(titolo)}\" AND artist:\"${fraseLucene(artista)}\"`;
+  const q = `work:"${fraseLucene(titolo)}" AND artist:"${fraseLucene(artista)}"`;
   const ricerca = await richiesta(
     `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=5`,
     fetchFn
@@ -140,7 +140,7 @@ async function cercaOperaDiretta(titolo, artista, fetchFn) {
 }
 
 async function cercaOperaDaRegistrazioni(titolo, artista, fetchFn) {
-  const q = `recording:\"${fraseLucene(titolo)}\" AND artist:\"${fraseLucene(artista)}\"`;
+  const q = `recording:"${fraseLucene(titolo)}" AND artist:"${fraseLucene(artista)}"`;
   const ricerca = await richiesta(
     `${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
     fetchFn
@@ -171,7 +171,7 @@ async function cercaOperaDaRegistrazioni(titolo, artista, fetchFn) {
 }
 
 async function cercaOperaUnicaPerTitolo(titolo, artista, fetchFn) {
-  const q = `work:\"${fraseLucene(titolo)}\"`;
+  const q = `work:"${fraseLucene(titolo)}"`;
   const ricerca = await richiesta(
     `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
     fetchFn

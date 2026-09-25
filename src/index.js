@@ -8,7 +8,6 @@ import { interpretaRicercaLibera } from './motore/ricerca-libera.js';
 import { applicaAutocontrollo } from './motore/self-check.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
-import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
 
 const INTESTAZIONI = {
   'content-type': 'application/json; charset=utf-8',
@@ -122,38 +121,6 @@ export default {
         console.error(e);
       }
       return json(statoMotore(env, fonti));
-    }
-
-    // Endpoint LAB temporanei: restano solo finche il collaudo remoto multi-fonte e bloccato dall'anteprima Cloudflare.
-    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-migra') {
-      try {
-        return json(await migraMultifonteLab(env.DB));
-      } catch (e) {
-        return errore('Migrazione multi-fonte LAB non completata.', 500, e?.message || 'Errore non specificato');
-      }
-    }
-
-    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-prova') {
-      try {
-        return json(await eseguiScopertaMultifonte({
-          titolo: 'Sapore di sale',
-          artista: 'Gino Paoli',
-          compositore: 'Gino Paoli',
-          anno: 1963,
-          lingua: 'ita',
-          paese: 'IT'
-        }, env, { massimoStrategie: 1 }));
-      } catch (e) {
-        return errore('Prova multi-fonte LAB non completata.', 500, e?.message || 'Errore non specificato');
-      }
-    }
-
-    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-stato') {
-      try {
-        return json(await statoMultifonteLab(env.DB, 'sapore di sale::gino paoli'));
-      } catch (e) {
-        return errore('Stato multi-fonte LAB non disponibile.', 500, e?.message || 'Errore non specificato');
-      }
     }
 
     if (request.method === 'GET' && url.pathname === '/api/versioni') {

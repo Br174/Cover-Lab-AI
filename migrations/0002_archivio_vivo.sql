@@ -62,13 +62,13 @@ INSERT OR IGNORE INTO configurazione_archivio_vivo(chiave, valore) VALUES
 INSERT OR IGNORE INTO coda_archivio_vivo(
   id, chiave_ricerca, titolo, artista, paese, lingua, priorita, motivo
 ) VALUES
-  ('seed-it-001', 'nel blu dipinto di blu|domenico modugno', 'Nel blu dipinto di blu', 'Domenico Modugno', 'IT', 'it', 100, 'lotto italiano iniziale'),
-  ('seed-it-002', 'sapore di sale|gino paoli', 'Sapore di sale', 'Gino Paoli', 'IT', 'it', 99, 'lotto italiano iniziale'),
-  ('seed-it-003', 'azzurro|adriano celentano', 'Azzurro', 'Adriano Celentano', 'IT', 'it', 98, 'lotto italiano iniziale'),
-  ('seed-it-004', 'il cielo in una stanza|gino paoli', 'Il cielo in una stanza', 'Gino Paoli', 'IT', 'it', 97, 'lotto italiano iniziale'),
-  ('seed-it-005', 'caruso|lucio dalla', 'Caruso', 'Lucio Dalla', 'IT', 'it', 96, 'lotto italiano iniziale'),
-  ('seed-it-006', 'la canzone del sole|lucio battisti', 'La canzone del sole', 'Lucio Battisti', 'IT', 'it', 95, 'lotto italiano iniziale'),
-  ('seed-it-007', 'almeno tu nell universo|mia martini', 'Almeno tu nell universo', 'Mia Martini', 'IT', 'it', 94, 'lotto italiano iniziale'),
-  ('seed-it-008', 'con te partiro|andrea bocelli', 'Con te partiro', 'Andrea Bocelli', 'IT', 'it', 93, 'lotto italiano iniziale'),
-  ('seed-it-009', 'l italiano|toto cutugno', 'L italiano', 'Toto Cutugno', 'IT', 'it', 92, 'lotto italiano iniziale'),
-  ('seed-it-010', 'gloria|umberto tozzi', 'Gloria', 'Umberto Tozzi', 'IT', 'it', 91, 'lotto italiano iniziale');
+  ('seed-it-001', 'nel blu dipinto di blu::domenico modugno', 'Nel blu dipinto di blu', 'Domenico Modugno', 'IT', 'it', 100, 'lotto italiano iniziale'),
+  ('seed-it-002', 'sapore di sale::gino paoli', 'Sapore di sale', 'Gino Paoli', 'IT', 'it', 99, 'lotto italiano iniziale'),
+  ('seed-it-003', 'azzurro::adriano celentano', 'Azzurro', 'Adriano Celentano', 'IT', 'it', 98, 'lotto italiano iniziale'),
+  ('seed-it-004', 'il cielo in una stanza::gino paoli', 'Il cielo in una stanza', 'Gino Paoli', 'IT', 'it', 97, 'lotto italiano iniziale'),
+  ('seed-it-005', 'caruso::lucio dalla', 'Caruso', 'Lucio Dalla', 'IT', 'it', 96, 'lotto italiano iniziale'),
+  ('seed-it-006', 'la canzone del sole::lucio battisti', 'La canzone del sole', 'Lucio Battisti', 'IT', 'it', 95, 'lotto italiano iniziale'),
+  ('seed-it-007', "almeno tu nell'universo::mia martini", "Almeno tu nell'universo", 'Mia Martini', 'IT', 'it', 94, 'lotto italiano iniziale'),
+  ('seed-it-008', 'con te partiro::andrea bocelli', 'Con te partirò', 'Andrea Bocelli', 'IT', 'it', 93, 'lotto italiano iniziale'),
+  ('seed-it-009', "l'italiano::toto cutugno", "L'italiano", 'Toto Cutugno', 'IT', 'it', 92, 'lotto italiano iniziale'),
+  ('seed-it-010', 'gloria::umberto tozzi', 'Gloria', 'Umberto Tozzi', 'IT', 'it', 91, 'lotto italiano iniziale');

@@ -1,4 +1,4 @@
-import { creaChiaveRicerca, creaChiaveDuplicato } from '../motore/normalizzazione.js';
+import { creaChiaveRicerca } from '../motore/normalizzazione.js';
 
 function limitaIntero(valore, minimo = 0, massimo = 100) {
   const n = Number(valore);
@@ -11,11 +11,7 @@ export function chiaveComposizione(titolo, artista = '') {
 }
 
 export function chiaveCandidato(candidato = {}) {
-  return creaChiaveDuplicato({
-    titolo: candidato.titolo || '',
-    interprete: candidato.interprete || '',
-    anno: candidato.anno || null
-  });
+  return creaChiaveRicerca(candidato.titolo || '', candidato.interprete || '');
 }
 
 export async function leggiStatoScoperta(db, chiave) {
@@ -72,7 +68,6 @@ export async function esisteCandidatoScoperta(db, chiave, candidato) {
 export async function salvaStrategieScoperta(db, chiave, strategie = []) {
   if (!db || !strategie.length) return 0;
   let inserite = 0;
-
   for (const strategia of strategie) {
     const provider = String(strategia?.provider || '').trim().toLowerCase();
     const query = String(strategia?.query || strategia?.testo || '').trim();
@@ -88,7 +83,6 @@ export async function salvaStrategieScoperta(db, chiave, strategie = []) {
     ).run();
     inserite += Number(risultato?.meta?.changes || 0);
   }
-
   return inserite;
 }
 
@@ -104,9 +98,10 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
       stato, prima_origine, ultima_verifica
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'da_verificare', ?11, CURRENT_TIMESTAMP)
     ON CONFLICT(chiave_composizione, chiave_candidato) DO UPDATE SET
-      lingua=COALESCE(excluded.lingua, candidati_scoperta.lingua),
-      paese=COALESCE(excluded.paese, candidati_scoperta.paese),
-      tipo_proposto=COALESCE(excluded.tipo_proposto, candidati_scoperta.tipo_proposto),
+      anno=COALESCE(candidati_scoperta.anno, excluded.anno),
+      lingua=COALESCE(candidati_scoperta.lingua, excluded.lingua),
+      paese=COALESCE(candidati_scoperta.paese, excluded.paese),
+      tipo_proposto=COALESCE(candidati_scoperta.tipo_proposto, excluded.tipo_proposto),
       affidabilita_proposta=MAX(candidati_scoperta.affidabilita_proposta, excluded.affidabilita_proposta),
       ultima_verifica=CURRENT_TIMESTAMP
   `).bind(
@@ -200,14 +195,7 @@ export async function aggiornaStrategia(db, id, {
         ultimo_errore=?6,
         aggiornata_il=CURRENT_TIMESTAMP
     WHERE id=?1
-  `).bind(
-    id,
-    stato,
-    cursore,
-    incrementaPagina ? 1 : 0,
-    Number(candidatiAggiunti || 0),
-    errore
-  ).run();
+  `).bind(id, stato, cursore, incrementaPagina ? 1 : 0, Number(candidatiAggiunti || 0), errore).run();
 }
 
 export async function registraGiroIA(db, chiave, { esaurita = false } = {}) {

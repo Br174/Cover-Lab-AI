@@ -2,6 +2,7 @@ import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
 import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
 import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
+import { leggiSaluteFonti } from './dati/salute-fonti.js';
 import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
 
 const INTESTAZIONI = {
@@ -57,29 +58,42 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.5.0',
+        versione: env.VERSIONE_MOTORE || '0.6.0',
         stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
         intelligenzaArtificiale: env.AI ? 'collegata' : 'da collegare',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
+        sourceRouter: 'predisposto',
+        circuitBreaker: 'predisposto',
         verificaCandidati: 'predisposta',
         creditiEFonti: 'predisposti',
+        appleCatalogo: 'configurato_senza_chiave',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
       });
     }
 
     if (request.method === 'GET' && url.pathname === '/stato') {
+      let fonti = [];
+      try {
+        fonti = await leggiSaluteFonti(env.DB);
+      } catch (e) {
+        console.error(e);
+      }
       return json({
         stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.5.0',
+        versione: env.VERSIONE_MOTORE || '0.6.0',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
+        sourceRouter: 'predisposto',
+        circuitBreaker: 'predisposto',
         verificaCandidati: 'predisposta',
         creditiEFonti: 'predisposti',
+        appleCatalogo: 'configurato_senza_chiave',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
+        fonti,
         lottoMusicLab: 20
       });
     }

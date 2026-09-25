@@ -4,6 +4,7 @@ import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
 import { riapriScopertaSeScaduta } from '../dati/freschezza-scoperta.js';
 import { verificaCandidatiMultifonte } from './verifica-candidati.js';
 import { eseguiRicercaProvider } from './source-router.js';
+import { creaAgendaAutointerrogazione } from './regista-ai.js';
 import {
   generaStrategieDeterministiche,
   generaStrategieFallback,
@@ -33,35 +34,63 @@ function intero(valore, ripiego, massimo = 50) {
 
 async function generaNuovePiste(originale, env, db, chiave) {
   const stato = await leggiStatoScoperta(db, chiave);
-  if (Number(stato?.ia_esaurita || 0) === 1) {
-    return { stato: 'ia_esaurita', strategieNuove: 0, candidatiNuovi: 0, esaurita: true };
-  }
-
   const strategieGiaUsate = await leggiStrategieNote(db, chiave);
   const candidatiGiaNoti = await leggiCandidatiNoti(db, chiave, 300);
+  const agenda = creaAgendaAutointerrogazione({
+    originale,
+    giro: Number(stato?.giri_ia || 0),
+    candidatiGiaNoti,
+    domandePerGiro: 8
+  });
+
   const piano = await generaPianoScopertaConIA({
     ...originale,
     strategieGiaUsate,
-    candidatiGiaNoti
+    candidatiGiaNoti,
+    agenda
   }, env);
 
   if (!piano.disponibile) {
-    return { stato: 'ia_non_disponibile', strategieNuove: 0, candidatiNuovi: 0, esaurita: false };
+    return {
+      stato: 'ia_non_disponibile',
+      strategieNuove: 0,
+      candidatiNuovi: 0,
+      agendaDomande: agenda.domande.length,
+      esaurita: false
+    };
   }
   if (piano.errore) {
-    return { stato: 'errore_ia', errore: piano.errore, strategieNuove: 0, candidatiNuovi: 0, esaurita: false };
+    return {
+      stato: 'errore_ia',
+      errore: piano.errore,
+      strategieNuove: 0,
+      candidatiNuovi: 0,
+      agendaDomande: agenda.domande.length,
+      esaurita: false
+    };
   }
 
   const strategieNuove = await salvaStrategieScoperta(db, chiave, piano.strategie || []);
   let candidatiNuovi = 0;
   for (const candidato of piano.candidati || []) {
     const esisteva = await esisteCandidatoScoperta(db, chiave, candidato);
-    await salvaCandidatoScoperta(db, chiave, candidato, 'ia');
+    await salvaCandidatoScoperta(db, chiave, candidato, 'ia_regista');
     if (!esisteva) candidatiNuovi += 1;
   }
 
-  await registraGiroIA(db, chiave, { esaurita: piano.esaurita === true });
-  return { stato: 'ok', strategieNuove, candidatiNuovi, esaurita: piano.esaurita === true };
+  // Una singola agenda puo risultare temporaneamente satura, ma non chiude mai
+  // la ricerca globale della composizione. I giri successivi cambiano agenda.
+  await registraGiroIA(db, chiave, { esaurita: false });
+  return {
+    stato: 'ok',
+    strategieNuove,
+    candidatiNuovi,
+    agendaDomande: agenda.domande.length,
+    domandeEsplorate: piano.domandeEsplorate || [],
+    nuoveDomande: piano.nuoveDomande || [],
+    agendaEsaurita: piano.esaurita === true,
+    esaurita: false
+  };
 }
 
 async function prossimeStrategiePerProvider(db, chiave, provider, limite) {
@@ -325,12 +354,14 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
     strategieDeterministicheNuove,
     strategieFallbackNuove,
     antiZeroAttivato: strategieFallbackNuove > 0,
+    nessunLimiteTotaleCover: true,
     piano,
     provider,
     verifica,
     candidatiTotali: Number(statoFinale?.candidati_totali || 0),
     fontiTotali: Number(statoFinale?.fonti_totali || 0),
     giriIA: Number(statoFinale?.giri_ia || 0),
-    iaEsaurita: Number(statoFinale?.ia_esaurita || 0) === 1
+    iaEsaurita: false,
+    saturazioneTemporaneaAgenda: piano?.agendaEsaurita === true
   };
 }

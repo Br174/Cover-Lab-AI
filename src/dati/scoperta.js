@@ -14,6 +14,19 @@ export function chiaveCandidato(candidato = {}) {
   return creaChiaveRicerca(candidato.titolo || '', candidato.interprete || '');
 }
 
+async function trovaCandidatoEsistente(db, chiave, candidato) {
+  if (!db || !candidato?.titolo) return null;
+  const nuovaChiave = chiaveCandidato(candidato);
+  return db.prepare(`
+    SELECT id, chiave_candidato
+    FROM candidati_scoperta
+    WHERE chiave_composizione=?1
+      AND (chiave_candidato=?2 OR chiave_candidato LIKE ?3)
+    ORDER BY CASE WHEN chiave_candidato=?2 THEN 0 ELSE 1 END, prima_scoperta
+    LIMIT 1
+  `).bind(chiave, nuovaChiave, `${nuovaChiave}::%`).first();
+}
+
 export async function leggiStatoScoperta(db, chiave) {
   if (!db) return null;
   return db.prepare(
@@ -55,14 +68,7 @@ export async function leggiCandidatiNoti(db, chiave, limite = 200) {
 }
 
 export async function esisteCandidatoScoperta(db, chiave, candidato) {
-  if (!db || !candidato?.titolo) return false;
-  const riga = await db.prepare(`
-    SELECT 1 AS presente
-    FROM candidati_scoperta
-    WHERE chiave_composizione=?1 AND chiave_candidato=?2
-    LIMIT 1
-  `).bind(chiave, chiaveCandidato(candidato)).first();
-  return Boolean(riga?.presente);
+  return Boolean(await trovaCandidatoEsistente(db, chiave, candidato));
 }
 
 export async function salvaStrategieScoperta(db, chiave, strategie = []) {
@@ -89,21 +95,36 @@ export async function salvaStrategieScoperta(db, chiave, strategie = []) {
 export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'ia') {
   if (!db || !candidato?.titolo) return null;
   const chiaveDuplicato = chiaveCandidato(candidato);
-  const id = crypto.randomUUID();
+  const esistente = await trovaCandidatoEsistente(db, chiave, candidato);
 
+  if (esistente?.id) {
+    await db.prepare(`
+      UPDATE candidati_scoperta
+      SET anno=COALESCE(anno, ?2),
+          lingua=COALESCE(lingua, ?3),
+          paese=COALESCE(paese, ?4),
+          tipo_proposto=COALESCE(tipo_proposto, ?5),
+          affidabilita_proposta=MAX(affidabilita_proposta, ?6),
+          ultima_verifica=CURRENT_TIMESTAMP
+      WHERE id=?1
+    `).bind(
+      esistente.id,
+      candidato.anno || null,
+      candidato.lingua || null,
+      candidato.paese || null,
+      candidato.tipo || candidato.tipoProposto || null,
+      limitaIntero(candidato.affidabilita ?? candidato.affidabilitaProposta ?? 0, 0, 100)
+    ).run();
+    return esistente.id;
+  }
+
+  const id = crypto.randomUUID();
   await db.prepare(`
     INSERT INTO candidati_scoperta(
       id, chiave_composizione, chiave_candidato, titolo, interprete,
       anno, lingua, paese, tipo_proposto, affidabilita_proposta,
       stato, prima_origine, ultima_verifica
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'da_verificare', ?11, CURRENT_TIMESTAMP)
-    ON CONFLICT(chiave_composizione, chiave_candidato) DO UPDATE SET
-      anno=COALESCE(candidati_scoperta.anno, excluded.anno),
-      lingua=COALESCE(candidati_scoperta.lingua, excluded.lingua),
-      paese=COALESCE(candidati_scoperta.paese, excluded.paese),
-      tipo_proposto=COALESCE(candidati_scoperta.tipo_proposto, excluded.tipo_proposto),
-      affidabilita_proposta=MAX(candidati_scoperta.affidabilita_proposta, excluded.affidabilita_proposta),
-      ultima_verifica=CURRENT_TIMESTAMP
   `).bind(
     id, chiave, chiaveDuplicato, candidato.titolo,
     candidato.interprete || null, candidato.anno || null,
@@ -112,13 +133,7 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
     limitaIntero(candidato.affidabilita ?? candidato.affidabilitaProposta ?? 0, 0, 100),
     origine
   ).run();
-
-  const riga = await db.prepare(`
-    SELECT id FROM candidati_scoperta
-    WHERE chiave_composizione=?1 AND chiave_candidato=?2
-    LIMIT 1
-  `).bind(chiave, chiaveDuplicato).first();
-  return riga?.id || id;
+  return id;
 }
 
 export async function salvaFonteCandidato(db, candidatoId, fonte) {

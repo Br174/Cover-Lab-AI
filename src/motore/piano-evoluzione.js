@@ -2,6 +2,8 @@
 // Questo file non e' una semplice nota: rappresenta il perimetro approvato
 // delle evoluzioni che devono essere realizzate e mantenute nel motore.
 
+export const VERSIONE_PIANO = '0.7.0';
+
 export const PRIORITA_COVER_LAB = Object.freeze([
   'velocita_dei_risultati',
   'quantita_dei_risultati',
@@ -55,7 +57,7 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   },
   {
     id: 'strategie_deterministiche_di_base',
-    stato: STATO_PIANO.PARZIALE,
+    stato: STATO_PIANO.IMPLEMENTATA,
     obiettivo: 'Cover Lab deve sapere cercare anche senza AI, usando query di base robuste e prevedibili.',
     impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti']
   },
@@ -73,7 +75,7 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   },
   {
     id: 'anti_zero_risultati',
-    stato: STATO_PIANO.PARZIALE,
+    stato: STATO_PIANO.IMPLEMENTATA,
     obiettivo: 'Zero da una singola fonte non significa zero cover: attivare fonti e strategie alternative prima di concludere.',
     impatto: ['quantita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
   },
@@ -145,6 +147,7 @@ export function riepilogoPianoEvoluzione() {
     else conteggi.daFare += 1;
   }
   return {
+    versionePiano: VERSIONE_PIANO,
     priorita: PRIORITA_COVER_LAB,
     totale: PIANO_EVOLUZIONE.length,
     ...conteggi,

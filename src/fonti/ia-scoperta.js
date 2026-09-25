@@ -1,4 +1,4 @@
-const PROVIDER_AMMESSI = new Set(['youtube', 'web', 'cataloghi']);
+const PROVIDER_AMMESSI = new Set(['youtube', 'cataloghi', 'internet_archive']);
 
 // Nessun limite complessivo al catalogo: questi limiti valgono SOLO per una
 // singola tornata, così l'Archivio Vivo può continuare nei giri successivi
@@ -79,7 +79,8 @@ export async function generaPianoScopertaConIA({
         `In QUESTA singola tornata restituisci al massimo ${MASSIMO_STRATEGIE_TORNATA} strategie e ${MASSIMO_CANDIDATI_TORNATA} candidati, scegliendo le piste nuove a maggior valore.`,
         'NON esiste un limite complessivo: altre tornate continueranno a cercare e ad ampliare il catalogo.',
         'Non ripetere strategie o candidati gia forniti.',
-        'Per ogni query indica il provider preferito: youtube, web oppure cataloghi.',
+        'Per ogni query indica il provider preferito tra youtube, cataloghi oppure internet_archive.',
+        'YouTube e usato come fonte di scoperta: Cover Lab non cerca apposta un video YouTube per una cover trovata altrove.',
         'I candidati sono IPOTESI e verranno verificati dopo; se un dato non e ragionevolmente noto lascialo nullo invece di inventarlo.',
         'Imposta esaurita=true solo se non riesci davvero a proporre altre piste sostanzialmente nuove.',
         'Rispondi esclusivamente con JSON valido nel formato {strategie:[...], candidati:[...], esaurita:boolean}.',

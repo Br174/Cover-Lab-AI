@@ -1,5 +1,6 @@
 name: LAB temporanea - Multi-fonte remoto
 
+# Commit di rilancio anteprima dopo riapertura della PR tecnica LAB.
 on:
   push:
     branches:

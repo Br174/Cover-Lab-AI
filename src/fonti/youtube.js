@@ -12,7 +12,7 @@ export async function cercaSuYouTube({
   paese = null,
   pageToken = null,
   maxResults = 50
-}, env, fetchFn = fetch) {
+}, env, fetchFn = fetch, signal = null) {
   const stato = statoProviderYouTube(env);
   if (!stato.disponibile) {
     return {
@@ -35,9 +35,9 @@ export async function cercaSuYouTube({
   if (paese && /^[A-Za-z]{2}$/.test(String(paese))) parametri.set('regionCode', String(paese).toUpperCase());
   if (pageToken) parametri.set('pageToken', String(pageToken));
 
-  const risposta = await fetchFn(`${ENDPOINT}?${parametri.toString()}`, {
-    headers: { Accept: 'application/json' }
-  });
+  const opzioniFetch = { headers: { Accept: 'application/json' } };
+  if (signal) opzioniFetch.signal = signal;
+  const risposta = await fetchFn(`${ENDPOINT}?${parametri.toString()}`, opzioniFetch);
 
   if (!risposta.ok) {
     let dettaglio = '';

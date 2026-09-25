@@ -28,29 +28,12 @@ jobs:
       - name: Esegui controlli automatici del motore
         run: npm test
 
+      - name: Valida migrazione D1 localmente
+        run: npx wrangler d1 migrations apply cover-lab-ai-db --local
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+
       - name: Valida pacchetto Cloudflare Worker
         run: npx wrangler deploy --dry-run
         env:
           WRANGLER_SEND_METRICS: 'false'
-
-      - name: Diagnostica inizializzazione D1 tramite anteprima LAB
-        if: github.event_name == 'push' && github.ref == 'refs/heads/lab/uab-onboarding-01'
-        shell: bash
-        run: |
-          set -euo pipefail
-          URL="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev/__inizializza-d1-cover-lab-ai"
-          CODICE="$(curl --silent --show-error --retry 6 --retry-delay 4 --retry-all-errors -o /tmp/d1-risultato.json -w '%{http_code}' "$URL")"
-          echo "Codice HTTP: $CODICE"
-          echo "Risposta Worker:"
-          cat /tmp/d1-risultato.json
-          echo
-          if [ "$CODICE" != "200" ]; then
-            echo "Inizializzazione D1 non riuscita: raccolta diagnostica completata."
-            exit 1
-          fi
-          grep -q '"stato": "ok"' /tmp/d1-risultato.json
-          grep -q '"composizioni"' /tmp/d1-risultato.json
-          grep -q '"versioni"' /tmp/d1-risultato.json
-          grep -q '"fonti_verifica"' /tmp/d1-risultato.json
-          grep -q '"ricerche"' /tmp/d1-risultato.json
-          grep -q '"opere_collegate"' /tmp/d1-risultato.json

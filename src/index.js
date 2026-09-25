@@ -57,13 +57,15 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.4.1',
+        versione: env.VERSIONE_MOTORE || '0.5.0',
         stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
         intelligenzaArtificiale: env.AI ? 'collegata' : 'da collegare',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
+        verificaCandidati: 'predisposta',
+        creditiEFonti: 'predisposti',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
       });
@@ -72,15 +74,17 @@ export default {
     if (request.method === 'GET' && url.pathname === '/stato') {
       return json({
         stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.4.1',
+        versione: env.VERSIONE_MOTORE || '0.5.0',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
+        verificaCandidati: 'predisposta',
+        creditiEFonti: 'predisposti',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
       });
     }
 
-    // Endpoint LAB temporanei: usati una sola volta per applicare/verificare 0003 sul D1 remoto.
+    // Endpoint LAB temporanei: restano solo finche il collaudo remoto multi-fonte e bloccato dall'anteprima Cloudflare.
     if (request.method === 'GET' && url.pathname === '/__lab-multifonte-migra') {
       try {
         return json(await migraMultifonteLab(env.DB));

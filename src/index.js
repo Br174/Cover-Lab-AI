@@ -2,6 +2,7 @@ import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
 import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
 import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { descriviPolicyFontiMedia } from './motore/policy-fonti-media.js';
+import { riepilogoPianoEvoluzione } from './motore/piano-evoluzione.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
@@ -71,6 +72,7 @@ export default {
         verificaCandidati: 'predisposta',
         creditiEFonti: 'predisposti',
         policyFontiMedia: descriviPolicyFontiMedia(),
+        pianoEvoluzione: riepilogoPianoEvoluzione(),
         appleCatalogo: 'configurato_senza_chiave',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
@@ -94,6 +96,7 @@ export default {
         verificaCandidati: 'predisposta',
         creditiEFonti: 'predisposti',
         policyFontiMedia: descriviPolicyFontiMedia(),
+        pianoEvoluzione: riepilogoPianoEvoluzione(),
         appleCatalogo: 'configurato_senza_chiave',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         fonti,

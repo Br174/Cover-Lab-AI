@@ -13,7 +13,7 @@ export async function cercaNelCatalogoApple({
   query,
   paeseRicerca = 'IT',
   limite = 50
-}, fetchFn = fetch) {
+}, fetchFn = fetch, signal = null) {
   const testo = String(query || '').trim();
   if (!testo) return { elementi: [], totale: 0 };
   const quantita = Math.max(1, Math.min(100, Number(limite) || 50));
@@ -26,9 +26,9 @@ export async function cercaNelCatalogoApple({
     explicit: 'Yes'
   });
 
-  const risposta = await fetchFn(`${BASE}?${params.toString()}`, {
-    headers: { Accept: 'application/json' }
-  });
+  const opzioniFetch = { headers: { Accept: 'application/json' } };
+  if (signal) opzioniFetch.signal = signal;
+  const risposta = await fetchFn(`${BASE}?${params.toString()}`, opzioniFetch);
   if (!risposta.ok) {
     const errore = new Error(`Apple Search API ha risposto ${risposta.status}`);
     errore.status = risposta.status;

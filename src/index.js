@@ -57,7 +57,7 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.4.0',
+        versione: env.VERSIONE_MOTORE || '0.4.1',
         stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
@@ -72,7 +72,7 @@ export default {
     if (request.method === 'GET' && url.pathname === '/stato') {
       return json({
         stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.4.0',
+        versione: env.VERSIONE_MOTORE || '0.4.1',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
         youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',

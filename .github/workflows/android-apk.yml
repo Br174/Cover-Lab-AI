@@ -67,10 +67,19 @@ jobs:
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" | tee /tmp/coverlab-badging.txt
           grep -q "package: name='it.coverlab.ai.lab'" /tmp/coverlab-badging.txt
+
           mkdir -p dist/uab
           cp "$APK" dist/uab/Cover-Lab-AI-LAB.apk
           zip -j dist/uab/Cover-Lab-AI-LAB.zip dist/uab/Cover-Lab-AI-LAB.apk
-          sha256sum dist/uab/Cover-Lab-AI-LAB.apk dist/uab/Cover-Lab-AI-LAB.zip > dist/uab/SHA256SUMS.txt
+          unzip -t dist/uab/Cover-Lab-AI-LAB.zip
+          test "$(unzip -Z1 dist/uab/Cover-Lab-AI-LAB.zip)" = "Cover-Lab-AI-LAB.apk"
+
+          (
+            cd dist/uab
+            sha256sum Cover-Lab-AI-LAB.apk Cover-Lab-AI-LAB.zip > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+
           cat > dist/uab/uab-manifest.json <<EOF
           {
             "motore": "UAB-CORE-V1.1",
@@ -83,6 +92,7 @@ jobs:
             "run": "${GITHUB_RUN_ID}"
           }
           EOF
+
           test -s dist/uab/Cover-Lab-AI-LAB.apk
           test -s dist/uab/Cover-Lab-AI-LAB.zip
           test -s dist/uab/SHA256SUMS.txt

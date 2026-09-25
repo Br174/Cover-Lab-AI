@@ -1,0 +1,19 @@
+{
+  "titolo": "Sapore di sale",
+  "artistaOriginale": "Gino Paoli",
+  "annoOriginale": 1963,
+  "controlliMinimi": [
+    { "interprete": "Jerry Adriani", "anno": 1964, "tipoAtteso": "cover" },
+    { "interprete": "Rita Pavone", "anno": 1975, "tipoAtteso": "cover" },
+    { "interprete": "Bruna Lelli", "anno": 1979, "tipoAtteso": "cover" },
+    { "interprete": "Richard Clayderman", "anno": 1983, "tipoAtteso": "strumentale" },
+    { "interprete": "Skiantos", "anno": 1984, "tipoAtteso": "cover" },
+    { "interprete": "Tonino Carotone", "anno": 2000, "tipoAtteso": "cover" },
+    { "interprete": "Perturbazione", "anno": 2006, "tipoAtteso": "cover" },
+    { "interprete": "Jimmy Fontana", "anno": 2006, "tipoAtteso": "cover" },
+    { "interprete": "Jimmy Santi", "anno": 1964, "titolo": "Sabor a salado", "lingua": "spagnolo", "tipoAtteso": "adattamento" },
+    { "interprete": "Silvana Velasco", "anno": 1964, "lingua": "spagnolo", "tipoAtteso": "adattamento" },
+    { "interprete": "Ed Wilson", "anno": 1964, "titolo": "Sabor de sal", "lingua": "portoghese", "tipoAtteso": "adattamento" }
+  ],
+  "nota": "Campione minimo di regressione, non elenco completo mondiale. Serve per misurare copertura e classificazione del motore."
+}

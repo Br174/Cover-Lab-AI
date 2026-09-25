@@ -35,14 +35,14 @@ function descriptorYouTube(env, opzioni = {}) {
     stato() {
       return { provider: 'youtube', ...statoProviderYouTube(env) };
     },
-    async cerca({ query, lingua = null, paese = null, cursore = null, limite = 50 } = {}) {
+    async cerca({ query, lingua = null, paese = null, cursore = null, limite = 50 } = {}, controllo = {}) {
       return cercaSuYouTube({
         query,
         lingua,
         paese,
         pageToken: cursore,
         maxResults: limite
-      }, env, opzioni.fetchYouTubeFn || fetch);
+      }, env, opzioni.fetchYouTubeFn || fetch, controllo.signal || null);
     }
   };
 }
@@ -59,12 +59,12 @@ function descriptorApple(env, opzioni = {}) {
     stato() {
       return statoProviderApple();
     },
-    async cerca({ query, paese = null, limite = 50 } = {}) {
+    async cerca({ query, paese = null, limite = 50 } = {}, controllo = {}) {
       const risultato = await cercaNelCatalogoApple({
         query,
         paeseRicerca: paese || 'IT',
         limite
-      }, opzioni.fetchAppleFn || fetch);
+      }, opzioni.fetchAppleFn || fetch, controllo.signal || null);
       return {
         disponibile: true,
         stato: 'ok',

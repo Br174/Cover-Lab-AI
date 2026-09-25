@@ -12,13 +12,15 @@ function raggruppa(righe = []) {
 }
 
 function completaStatoQualita(versione, conflitti = []) {
-  const aperti = conflitti.filter(c => c.stato === 'aperto');
+  const nonRisolti = conflitti.filter(c => c.stato !== 'risolto');
+  const inIndagine = conflitti.filter(c => c.stato === 'in_indagine');
   return {
     ...versione,
     confidenza: Number(versione.affidabilita || 0),
     statoVerifica: versione.statoVerifica || 'da_verificare',
-    haConflitti: aperti.length > 0,
-    conflittiAperti: aperti.length,
+    haConflitti: nonRisolti.length > 0,
+    conflittiAperti: nonRisolti.length,
+    conflittiInIndagine: inIndagine.length,
     conflitti
   };
 }

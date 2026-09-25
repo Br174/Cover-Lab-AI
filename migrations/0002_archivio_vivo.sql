@@ -68,7 +68,7 @@ INSERT OR IGNORE INTO coda_archivio_vivo(
   ('seed-it-004', 'il cielo in una stanza::gino paoli', 'Il cielo in una stanza', 'Gino Paoli', 'IT', 'it', 97, 'lotto italiano iniziale'),
   ('seed-it-005', 'caruso::lucio dalla', 'Caruso', 'Lucio Dalla', 'IT', 'it', 96, 'lotto italiano iniziale'),
   ('seed-it-006', 'la canzone del sole::lucio battisti', 'La canzone del sole', 'Lucio Battisti', 'IT', 'it', 95, 'lotto italiano iniziale'),
-  ('seed-it-007', "almeno tu nell'universo::mia martini", "Almeno tu nell'universo", 'Mia Martini', 'IT', 'it', 94, 'lotto italiano iniziale'),
+  ('seed-it-007', 'almeno tu nell''universo::mia martini', 'Almeno tu nell''universo', 'Mia Martini', 'IT', 'it', 94, 'lotto italiano iniziale'),
   ('seed-it-008', 'con te partiro::andrea bocelli', 'Con te partirò', 'Andrea Bocelli', 'IT', 'it', 93, 'lotto italiano iniziale'),
-  ('seed-it-009', "l'italiano::toto cutugno", "L'italiano", 'Toto Cutugno', 'IT', 'it', 92, 'lotto italiano iniziale'),
+  ('seed-it-009', 'l''italiano::toto cutugno', 'L''italiano', 'Toto Cutugno', 'IT', 'it', 92, 'lotto italiano iniziale'),
   ('seed-it-010', 'gloria::umberto tozzi', 'Gloria', 'Umberto Tozzi', 'IT', 'it', 91, 'lotto italiano iniziale');

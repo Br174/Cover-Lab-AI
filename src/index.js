@@ -1,5 +1,6 @@
 import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
 import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
+import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 
 const INTESTAZIONI = {
@@ -36,6 +37,18 @@ function programma(ctx, promessa) {
   if (ctx?.waitUntil) ctx.waitUntil(protetta);
 }
 
+function originaleDaRisultato(risultato, titolo, artista) {
+  const composizione = risultato?.composizione || {};
+  return {
+    titolo: composizione.titolo || titolo,
+    artista: composizione.artista || artista,
+    compositore: composizione.compositore || null,
+    anno: composizione.anno || null,
+    lingua: composizione.lingua || null,
+    paese: composizione.paese || null
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -43,12 +56,14 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.3.0',
+        versione: env.VERSIONE_MOTORE || '0.4.0',
         stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
         intelligenzaArtificiale: env.AI ? 'collegata' : 'da collegare',
         archivioVivo: 'predisposto',
+        motoreMultifonte: 'predisposto',
+        youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
       });
     }
@@ -56,8 +71,10 @@ export default {
     if (request.method === 'GET' && url.pathname === '/stato') {
       return json({
         stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.3.0',
+        versione: env.VERSIONE_MOTORE || '0.4.0',
         archivioVivo: 'predisposto',
+        motoreMultifonte: 'predisposto',
+        youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
         lottoMusicLab: 20
       });
     }
@@ -135,13 +152,15 @@ export default {
           motivo: 'richiesta diretta Music Lab'
         }));
 
-        // Se abbiamo risposto dalla memoria, la risposta resta immediata ma parte
-        // anche un controllo fresco in rete senza bloccare Music Lab.
+        // La memoria rende la risposta immediata, ma non congela mai l'archivio:
+        // avvia in background sia il controllo strutturato sia nuove piste multi-fonte.
         if (!parametri.approfondisci && risultato?.provenienza === 'memoria dei risultati') {
-          programma(ctx, cercaVersioni({
-            ...parametri,
-            approfondisci: true
-          }, env));
+          programma(ctx, cercaVersioni({ ...parametri, approfondisci: true }, env));
+          programma(ctx, eseguiScopertaMultifonte(
+            originaleDaRisultato(risultato, parametri.titolo, parametri.artista),
+            env,
+            { massimoStrategie: 1 }
+          ));
         }
 
         return json(risultato);

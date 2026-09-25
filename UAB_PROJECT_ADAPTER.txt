@@ -8,11 +8,12 @@ UAB_MOTHER_PREFIX=mother/
 UAB_BUILD_ROUTE=.github/workflows/android-apk.yml su runner standard GitHub Actions per repository pubblico
 UAB_CACHE_MODE=gradle
 UAB_RELEASE_MODE=immutable-mother
-UAB_CORE_REGRESSION_GATES=test automatici motore, validazione Wrangler, compilazione Android, verifica pacchetto LAB, presenza APK e ZIP, checksum SHA-256, assenza di segreti in chiaro
+UAB_CORE_REGRESSION_GATES=test automatici motore, validazione Wrangler, compilazione Android, verifica pacchetto LAB, presenza APK e ZIP, checksum SHA-256, identita sorgente/artefatto, assenza di segreti in chiaro
 UAB_ANDROID_PACKAGE_STRATEGY=parallel-lab
 UAB_SIGNING_STRATEGY=ephemeral-lab
 UAB_PATCH_REPACK=forbidden
-UAB_OUTPUT_TYPES=apk,zip
+UAB_OUTPUT_TYPES=apk,zip,sha256-manifest
+UAB_ONBOARDING_STATUS=lab-verification-sync
 
 NOTE OPERATIVE
 - Il repository e' pubblico: la rotta remota primaria e' GitHub Actions standard, sotto controllo UAB CORE.

@@ -14,24 +14,33 @@ jobs:
     steps:
       - name: Scarica il codice
         uses: actions/checkout@v4
+
       - name: Configura Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - name: Configura Android SDK
-        uses: android-actions/setup-android@v3
+
       - name: Configura Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
-      - name: Installa SDK Android richiesto
+
+      - name: Verifica SDK Android del server
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
+
+      - name: Installa piattaforma Android richiesta
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"
+
       - name: Compila APK di prova
         working-directory: android
         run: gradle --no-daemon :app:assembleDebug
+
       - name: Pubblica APK come artefatto
         uses: actions/upload-artifact@v4
         with:

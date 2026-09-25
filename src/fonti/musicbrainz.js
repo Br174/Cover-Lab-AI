@@ -1,5 +1,7 @@
 const BASE = 'https://musicbrainz.org/ws/2';
 const ATTESA_MINIMA_MS = 1050;
+const STATI_TRANSITORI = new Set([429, 500, 502, 503, 504]);
+const TENTATIVI_MASSIMI = 3;
 let ultimoAccesso = 0;
 
 function dormi(ms) {
@@ -7,20 +9,35 @@ function dormi(ms) {
 }
 
 async function richiesta(url, fetchFn = fetch) {
-  if (fetchFn === fetch) {
-    const attesa = Math.max(0, ATTESA_MINIMA_MS - (Date.now() - ultimoAccesso));
-    if (attesa) await dormi(attesa);
-    ultimoAccesso = Date.now();
+  let ultimaRisposta = null;
+
+  for (let tentativo = 1; tentativo <= TENTATIVI_MASSIMI; tentativo += 1) {
+    if (fetchFn === fetch) {
+      const attesa = Math.max(0, ATTESA_MINIMA_MS - (Date.now() - ultimoAccesso));
+      if (attesa) await dormi(attesa);
+      ultimoAccesso = Date.now();
+    }
+
+    const risposta = await fetchFn(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'CoverLabAI/0.3 (https://github.com/Br174/Cover-Lab-AI)'
+      }
+    });
+    ultimaRisposta = risposta;
+
+    if (risposta.ok) return risposta.json();
+
+    const transitorio = STATI_TRANSITORI.has(Number(risposta.status));
+    if (!transitorio || tentativo >= TENTATIVI_MASSIMI) break;
+
+    const retryAfter = Number(risposta.headers?.get?.('retry-after') || 0);
+    const attesaServer = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 0;
+    const attesaProgressiva = ATTESA_MINIMA_MS * tentativo;
+    await dormi(Math.max(ATTESA_MINIMA_MS, attesaServer, attesaProgressiva));
   }
 
-  const risposta = await fetchFn(url, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'CoverLabAI/0.2 (https://github.com/Br174/Cover-Lab-AI)'
-    }
-  });
-  if (!risposta.ok) throw new Error(`MusicBrainz ha risposto ${risposta.status}`);
-  return risposta.json();
+  throw new Error(`MusicBrainz ha risposto ${ultimaRisposta?.status || 'senza stato'}`);
 }
 
 function normalizzaConfronto(valore) {
@@ -184,17 +201,12 @@ async function cercaOperaUnicaPerTitolo(titolo, artista, fetchFn) {
 }
 
 export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
-  // Percorso rapido: quando MusicBrainz collega l'artista direttamente all'opera
-  // (compositore, autore, ecc.), bastano ricerca opera + dettaglio opera.
   const diretta = await cercaOperaDiretta(titolo, artista, fetchFn);
   if (diretta) return diretta;
 
-  // Percorso robusto: non ci si ferma al primo recording con punteggio alto.
-  // Si scorrono più candidati fino a trovare una relazione performance -> opera.
   const daRegistrazione = await cercaOperaDaRegistrazioni(titolo, artista, fetchFn);
   if (daRegistrazione) return daRegistrazione;
 
-  // Ultima possibilità sicura: titolo che identifica una sola opera esatta.
   return cercaOperaUnicaPerTitolo(titolo, artista, fetchFn);
 }
 

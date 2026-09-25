@@ -1,4 +1,5 @@
 import { cercaVersioni } from './motore.js';
+import { eseguiScopertaMultifonte } from './orchestratore-multifonte.js';
 import {
   leggiConfigurazioneArchivioVivo,
   prossimeVociArchivioVivo,
@@ -48,12 +49,38 @@ export async function eseguiArchivioVivo(env, opzioni = {}) {
         approfondisci: true
       }, env);
 
+      let multifonte = { stato: 'non_eseguita' };
+      if (risultato?.stato === 'pronto') {
+        try {
+          multifonte = await eseguiScopertaMultifonte({
+            titolo: risultato?.composizione?.titolo || voce.titolo,
+            artista: risultato?.composizione?.artista || voce.artista || '',
+            compositore: risultato?.composizione?.compositore || null,
+            anno: risultato?.composizione?.anno || null,
+            lingua: risultato?.composizione?.lingua || voce.lingua || null,
+            paese: voce.paese || null
+          }, env);
+        } catch (e) {
+          multifonte = {
+            stato: 'errore_non_bloccante',
+            errore: String(e?.message || 'Errore multi-fonte non specificato').slice(0, 500)
+          };
+        }
+      }
+
       const dopo = await contaVersioniArchiviate(db, voce.titolo, voce.artista || '');
       const nuove = Math.max(0, dopo - prima);
       const cursore = {
         ultimoOffset: risultato?.prossimoOffset ?? null,
         analisiCompleta: Boolean(risultato?.analisiCompleta),
         opereDerivateIndividuate: Number(risultato?.opereDerivateIndividuate || 0),
+        multifonte: {
+          stato: multifonte?.stato || null,
+          candidatiTotali: Number(multifonte?.candidatiTotali || 0),
+          fontiTotali: Number(multifonte?.fontiTotali || 0),
+          giriIA: Number(multifonte?.giriIA || 0),
+          youtube: multifonte?.provider?.youtube?.stato || null
+        },
         aggiornatoIl: new Date().toISOString()
       };
 
@@ -68,7 +95,8 @@ export async function eseguiArchivioVivo(env, opzioni = {}) {
         dettaglio: JSON.stringify({
           provenienza: risultato?.provenienza || null,
           analisiCompleta: risultato?.analisiCompleta ?? null,
-          prossimoOffset: risultato?.prossimoOffset ?? null
+          prossimoOffset: risultato?.prossimoOffset ?? null,
+          multifonte
         })
       });
 
@@ -79,6 +107,7 @@ export async function eseguiArchivioVivo(env, opzioni = {}) {
         archiviatePrima: prima,
         archiviateDopo: dopo,
         nuove,
+        multifonte,
         durataMs: Date.now() - inizio
       });
     } catch (e) {

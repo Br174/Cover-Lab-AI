@@ -1,0 +1,46 @@
+name: Prova reale temporanea Cover Lab AI
+
+on:
+  push:
+    branches:
+      - 'lab/uab-onboarding-01'
+    paths:
+      - '.github/workflows/prova-reale-coverlab.yml'
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cerca Sapore di sale sul motore online
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://cover-lab-ai.brunoverlezza.workers.dev/api/ricerca"
+          INIZIO=$(date +%s%3N)
+          CODICE=$(curl --silent --show-error --max-time 35 \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc"}' \
+            -o /tmp/risultato.json \
+            -w '%{http_code}')
+          FINE=$(date +%s%3N)
+          DURATA=$((FINE-INIZIO))
+          echo "Codice HTTP: $CODICE"
+          echo "Durata totale ms: $DURATA"
+          echo "Risposta:"
+          cat /tmp/risultato.json
+          echo
+          test "$CODICE" = "200"
+          python - <<'PY'
+          import json
+          p='/tmp/risultato.json'
+          d=json.load(open(p,encoding='utf-8'))
+          print('--- RIASSUNTO TEST ---')
+          for k in ['stato','titolo','artista','versioniIndividuate','totale','durataMs','provenienza']:
+              if k in d: print(f'{k}: {d[k]}')
+          versioni=d.get('versioni') or d.get('risultati') or []
+          print('numero elementi:', len(versioni) if isinstance(versioni,list) else 'n/d')
+          if isinstance(versioni,list):
+              for v in versioni[:10]:
+                  print('-', v.get('anno'), v.get('interprete') or v.get('artista'), v.get('titolo'), v.get('tipo'), v.get('lingua'), v.get('affidabilita'))
+          PY

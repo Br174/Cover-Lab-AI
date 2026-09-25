@@ -5,6 +5,7 @@ import { descriviPolicyFontiMedia } from './motore/policy-fonti-media.js';
 import { riepilogoPianoEvoluzione } from './motore/piano-evoluzione.js';
 import { descriviRegistaAI } from './motore/regista-ai.js';
 import { interpretaRicercaLibera } from './motore/ricerca-libera.js';
+import { applicaAutocontrollo } from './motore/self-check.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
@@ -83,6 +84,7 @@ function statoMotore(env, fonti = null) {
     archivioVivo: 'predisposto',
     motoreMultifonte: 'predisposto',
     registaAI: descriviRegistaAI(),
+    autocontrolloRisultati: 'predisposto',
     ricercaLiberaDiagnostica: 'predisposta',
     nessunLimiteTotaleCover: true,
     sourceRouter: 'predisposto',
@@ -210,7 +212,7 @@ export default {
           ordine,
           approfondisci: false
         };
-        const risultato = await cercaVersioni(parametri, env);
+        const risultato = applicaAutocontrollo(await cercaVersioni(parametri, env));
         programmaApprofondimenti(ctx, risultato, parametri, env, 'ricerca diagnostica manuale Cover Lab');
 
         return json({
@@ -235,13 +237,20 @@ export default {
       const offset = Math.max(0, Number(corpo?.offset || 100));
       if (!titolo || !artista) return errore('Titolo e artista sono obbligatori.');
       try {
-        const risultato = await cercaAncoraVersioni({ titolo, artista, ordine, offset }, env);
+        const risultato = applicaAutocontrollo(await cercaAncoraVersioni({ titolo, artista, ordine, offset }, env));
         programma(ctx, accodaArchivioVivo(env.DB, {
           titolo,
           artista,
           priorita: 95,
           motivo: 'continuazione richiesta Music Lab'
         }));
+        if (risultato.ricercaMultifonteNecessaria === true) {
+          programma(ctx, eseguiScopertaMultifonte(
+            originaleDaRisultato(risultato, titolo, artista),
+            env,
+            { massimoStrategie: 1 }
+          ));
+        }
         return json(risultato);
       } catch (e) {
         console.error(e);
@@ -262,7 +271,7 @@ export default {
       if (!parametri.artista) return errore("L'artista è obbligatorio nella prima versione del motore.");
 
       try {
-        const risultato = await cercaVersioni(parametri, env);
+        const risultato = applicaAutocontrollo(await cercaVersioni(parametri, env));
         programmaApprofondimenti(ctx, risultato, parametri, env);
         return json(risultato);
       } catch (e) {

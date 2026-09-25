@@ -11,11 +11,28 @@ jobs:
   prova:
     runs-on: ubuntu-latest
     steps:
-      - name: Cerca Sapore di sale sul motore online
+      - name: Attende anteprima 0.2.1 e prova Sapore di sale
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://cover-lab-ai.brunoverlezza.workers.dev/api/ricerca"
+          BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
+
+          echo "Attendo che Cloudflare esponga la LAB 0.2.1..."
+          PRONTA=0
+          for TENTATIVO in $(seq 1 30); do
+            CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/stato.json -w '%{http_code}' "$BASE/" || true)
+            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.2.1"' /tmp/stato.json; then
+              echo "Anteprima 0.2.1 pronta al tentativo $TENTATIVO."
+              cat /tmp/stato.json
+              PRONTA=1
+              break
+            fi
+            echo "Tentativo $TENTATIVO: anteprima non ancora aggiornata (HTTP $CODICE_STATO)."
+            sleep 5
+          done
+          test "$PRONTA" = "1"
+
+          URL="$BASE/api/ricerca"
           INIZIO=$(date +%s%3N)
           CODICE=$(curl --silent --show-error --max-time 35 \
             -X POST "$URL" \
@@ -25,22 +42,55 @@ jobs:
             -w '%{http_code}')
           FINE=$(date +%s%3N)
           DURATA=$((FINE-INIZIO))
-          echo "Codice HTTP: $CODICE"
-          echo "Durata totale ms: $DURATA"
-          echo "Risposta:"
+          echo "Codice HTTP prima ricerca: $CODICE"
+          echo "Durata totale prima ricerca ms: $DURATA"
+          echo "Risposta prima ricerca:"
           cat /tmp/risultato.json
           echo
           test "$CODICE" = "200"
+
           python - <<'PY'
           import json
-          p='/tmp/risultato.json'
-          d=json.load(open(p,encoding='utf-8'))
-          print('--- RIASSUNTO TEST ---')
-          for k in ['stato','titolo','artista','versioniIndividuate','totale','durataMs','provenienza']:
-              if k in d: print(f'{k}: {d[k]}')
-          versioni=d.get('versioni') or d.get('risultati') or []
-          print('numero elementi:', len(versioni) if isinstance(versioni,list) else 'n/d')
-          if isinstance(versioni,list):
-              for v in versioni[:10]:
-                  print('-', v.get('anno'), v.get('interprete') or v.get('artista'), v.get('titolo'), v.get('tipo'), v.get('lingua'), v.get('affidabilita'))
+          d=json.load(open('/tmp/risultato.json',encoding='utf-8'))
+          print('--- RIASSUNTO PRIMA RICERCA ---')
+          print('stato:', d.get('stato'))
+          print('provenienza:', d.get('provenienza'))
+          print('versioniIndividuate:', d.get('versioniIndividuate'))
+          print('durataMs motore:', d.get('durataMs'))
+          c=d.get('composizione') or {}
+          print('opera:', c.get('idMusicBrainz'), c.get('titolo'), c.get('anno'), c.get('lingua'), c.get('metodoIndividuazione'))
+          versioni=d.get('versioni') or []
+          print('numero elementi:', len(versioni))
+          for v in versioni[:15]:
+              print('-', v.get('anno'), v.get('interprete'), v.get('titolo'), v.get('tipo'), v.get('lingua'), v.get('affidabilita'))
+          assert d.get('stato') == 'pronto', d
+          assert c.get('idMusicBrainz') == 'e94fdfad-2d84-3cab-9152-3746a4c98162', c
+          assert int(d.get('versioniIndividuate') or 0) > 0, d
+          PY
+
+          INIZIO2=$(date +%s%3N)
+          CODICE2=$(curl --silent --show-error --max-time 15 \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc"}' \
+            -o /tmp/risultato2.json \
+            -w '%{http_code}')
+          FINE2=$(date +%s%3N)
+          DURATA2=$((FINE2-INIZIO2))
+          echo "Codice HTTP seconda ricerca: $CODICE2"
+          echo "Durata totale seconda ricerca ms: $DURATA2"
+          cat /tmp/risultato2.json
+          echo
+          test "$CODICE2" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/risultato2.json',encoding='utf-8'))
+          print('--- RIASSUNTO SECONDA RICERCA ---')
+          print('stato:', d.get('stato'))
+          print('provenienza:', d.get('provenienza'))
+          print('versioniIndividuate:', d.get('versioniIndividuate'))
+          print('durataMs motore:', d.get('durataMs'))
+          assert d.get('stato') == 'pronto', d
+          assert d.get('provenienza') == 'memoria dei risultati', d
+          assert int(d.get('versioniIndividuate') or 0) > 0, d
           PY

@@ -111,14 +111,14 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   },
   {
     id: 'deduplicazione_avanzata',
-    stato: STATO_PIANO.PARZIALE,
-    obiettivo: 'Distinguere duplicato certo, probabile duplicato e versione realmente distinta senza perdere cover valide.',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Distinguere duplicato certo, probabile duplicato e versione realmente distinta senza perdere cover valide. Solo i duplicati certi vengono fusi; quelli probabili restano archiviati e segnalati per ulteriore verifica.',
     impatto: ['quantita_dei_risultati', 'affidabilita_reale_delle_cover']
   },
   {
     id: 'self_check_risultati',
-    stato: STATO_PIANO.DA_FARE,
-    obiettivo: 'Controllare automaticamente coerenza, anomalie, regressioni e risultati sospettosamente bassi prima della risposta definitiva.',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Controllare automaticamente coerenza, anomalie, regressioni, conflitti, copertura monofonte e risultati sospettosamente bassi; quando necessario attivare ulteriore ricerca multi-fonte in background.',
     impatto: ['quantita_dei_risultati', 'affidabilita_reale_delle_cover']
   },
   {
@@ -148,7 +148,7 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   {
     id: 'interfaccia_diagnostica_metadata',
     stato: STATO_PIANO.PARZIALE,
-    obiettivo: 'L APK Cover Lab deve consentire una ricerca manuale di prova e mostrare originale e cover con metadati, senza riprodurre audio o video. L uso normale resta l integrazione con Music Lab.',
+    obiettivo: 'L APK Cover Lab dispone della barra unica di ricerca libera e mostra originale e cover con metadati, senza riprodurre audio o video. Codice e compilazione sono verificati; resta il collaudo end-to-end contro una LAB remota aggiornata.',
     impatto: ['velocita_dei_risultati', 'quantita_dei_risultati', 'affidabilita_reale_delle_cover']
   }
 ]);

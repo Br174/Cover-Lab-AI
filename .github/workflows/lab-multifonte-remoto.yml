@@ -1,0 +1,104 @@
+name: LAB temporanea - Multi-fonte remoto
+
+on:
+  push:
+    branches:
+      - 'lab/uab-onboarding-01'
+    paths:
+      - '.github/workflows/lab-multifonte-remoto.yml'
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Migra D1, genera piste AI e verifica isolamento candidati
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
+          PAGINA="$BASE/api/versioni?titolo=Sapore%20di%20sale&artista=Gino%20Paoli&ordine=asc&offset=0"
+
+          echo "Attendo LAB 0.4.0 con endpoint temporanei..."
+          PRONTO=0
+          for TENTATIVO in $(seq 1 35); do
+            CODICE=$(curl --silent --show-error --max-time 12 -o /tmp/migra.json -w '%{http_code}' "$BASE/__lab-multifonte-migra" || true)
+            if [ "$CODICE" = "200" ] && grep -q '"stato": "ok"' /tmp/migra.json; then
+              PRONTO=1
+              break
+            fi
+            echo "Tentativo $TENTATIVO: HTTP $CODICE"
+            sleep 4
+          done
+          test "$PRONTO" = "1"
+
+          echo "--- MIGRAZIONE 0003 REMOTA ---"
+          cat /tmp/migra.json
+          echo
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/migra.json',encoding='utf-8'))
+          attese={'stato_scoperta_composizione','strategie_scoperta','candidati_scoperta','fonti_candidato'}
+          assert d.get('stato') == 'ok', d
+          assert set(d.get('tabelle') or []) == attese, d
+          cfg={x['chiave']:x['valore'] for x in d.get('configurazione') or []}
+          assert cfg.get('multifonte_abilitato') == '1', cfg
+          print('Migrazione multi-fonte verificata:', sorted(attese))
+          PY
+
+          curl --fail --silent --show-error --max-time 20 "$PAGINA" -o /tmp/prima.json
+          PRIMA=$(python - <<'PY'
+          import json
+          print(int(json.load(open('/tmp/prima.json',encoding='utf-8')).get('totale') or 0))
+          PY
+          )
+          echo "Versioni visibili prima della prova: $PRIMA"
+
+          echo "--- AUTO-INTERROGAZIONE AI ---"
+          CODICE_PROVA=$(curl --silent --show-error --max-time 80 -o /tmp/prova.json -w '%{http_code}' "$BASE/__lab-multifonte-prova")
+          echo "HTTP prova: $CODICE_PROVA"
+          cat /tmp/prova.json
+          echo
+          test "$CODICE_PROVA" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/prova.json',encoding='utf-8'))
+          assert d.get('stato') == 'ok', d
+          piano=d.get('piano') or {}
+          assert piano.get('stato') in ('ok','ia_esaurita'), piano
+          yt=(d.get('provider') or {}).get('youtube') or {}
+          assert yt.get('stato') in ('chiave_da_configurare','configurato','ok'), yt
+          if yt.get('stato') == 'chiave_da_configurare':
+              assert int(yt.get('strategieElaborate') or 0) == 0, yt
+          print('Giri IA:', d.get('giriIA'), 'candidati:', d.get('candidatiTotali'), 'YouTube:', yt.get('stato'))
+          PY
+
+          echo "--- STATO PERSISTITO ---"
+          curl --fail --silent --show-error --max-time 20 "$BASE/__lab-multifonte-stato" -o /tmp/stato.json
+          cat /tmp/stato.json
+          echo
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/stato.json',encoding='utf-8'))
+          assert d.get('stato') == 'ok', d
+          assert d.get('riepilogo') is not None, d
+          strategie=d.get('strategie') or []
+          candidati=d.get('candidati') or []
+          assert len(strategie) > 0 or len(candidati) > 0, d
+          for c in candidati:
+              assert c.get('stato') == 'da_verificare', c
+              assert int(c.get('affidabilita_proposta') or 0) <= 80, c
+          for s in strategie:
+              if s.get('provider') == 'youtube' and s.get('stato') == 'attesa_provider':
+                  assert int(s.get('pagine_analizzate') or 0) == 0, s
+          print('Strategie:', len(strategie), 'candidati pendenti:', len(candidati))
+          PY
+
+          curl --fail --silent --show-error --max-time 20 "$PAGINA" -o /tmp/dopo.json
+          DOPO=$(python - <<'PY'
+          import json
+          print(int(json.load(open('/tmp/dopo.json',encoding='utf-8')).get('totale') or 0))
+          PY
+          )
+          echo "Versioni visibili dopo la prova: $DOPO"
+          test "$PRIMA" = "$DOPO"
+          echo "OK: i candidati IA non sono stati esposti come cover verificate a Music Lab."

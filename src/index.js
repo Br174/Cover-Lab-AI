@@ -3,6 +3,7 @@ import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
 import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { descriviPolicyFontiMedia } from './motore/policy-fonti-media.js';
 import { riepilogoPianoEvoluzione } from './motore/piano-evoluzione.js';
+import { descriviRegistaAI } from './motore/regista-ai.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
@@ -53,6 +54,27 @@ function originaleDaRisultato(risultato, titolo, artista) {
   };
 }
 
+function statoMotore(env, fonti = null) {
+  return {
+    stato: 'operativo',
+    versione: env.VERSIONE_MOTORE || '0.7.0',
+    archivioVivo: 'predisposto',
+    motoreMultifonte: 'predisposto',
+    registaAI: descriviRegistaAI(),
+    nessunLimiteTotaleCover: true,
+    sourceRouter: 'predisposto',
+    circuitBreaker: 'predisposto',
+    verificaCandidati: 'predisposta',
+    creditiEFonti: 'predisposti',
+    policyFontiMedia: descriviPolicyFontiMedia(),
+    pianoEvoluzione: riepilogoPianoEvoluzione(),
+    appleCatalogo: 'configurato_senza_chiave',
+    youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
+    ...(fonti ? { fonti } : {}),
+    lottoMusicLab: 20
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -60,22 +82,10 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.6.1',
-        stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
         intelligenzaArtificiale: env.AI ? 'collegata' : 'da collegare',
-        archivioVivo: 'predisposto',
-        motoreMultifonte: 'predisposto',
-        sourceRouter: 'predisposto',
-        circuitBreaker: 'predisposto',
-        verificaCandidati: 'predisposta',
-        creditiEFonti: 'predisposti',
-        policyFontiMedia: descriviPolicyFontiMedia(),
-        pianoEvoluzione: riepilogoPianoEvoluzione(),
-        appleCatalogo: 'configurato_senza_chiave',
-        youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
-        lottoMusicLab: 20
+        ...statoMotore(env)
       });
     }
 
@@ -86,22 +96,7 @@ export default {
       } catch (e) {
         console.error(e);
       }
-      return json({
-        stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.6.1',
-        archivioVivo: 'predisposto',
-        motoreMultifonte: 'predisposto',
-        sourceRouter: 'predisposto',
-        circuitBreaker: 'predisposto',
-        verificaCandidati: 'predisposta',
-        creditiEFonti: 'predisposti',
-        policyFontiMedia: descriviPolicyFontiMedia(),
-        pianoEvoluzione: riepilogoPianoEvoluzione(),
-        appleCatalogo: 'configurato_senza_chiave',
-        youtube: env.YOUTUBE_API_KEY ? 'configurato' : 'chiave_da_configurare',
-        fonti,
-        lottoMusicLab: 20
-      });
+      return json(statoMotore(env, fonti));
     }
 
     // Endpoint LAB temporanei: restano solo finche il collaudo remoto multi-fonte e bloccato dall'anteprima Cloudflare.

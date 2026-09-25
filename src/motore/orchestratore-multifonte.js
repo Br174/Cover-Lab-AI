@@ -1,6 +1,7 @@
 import { generaPianoScopertaConIA, interpretaRisultatiSorgenteConIA } from '../fonti/ia-scoperta.js';
 import { cercaSuYouTube, statoProviderYouTube } from '../fonti/youtube.js';
 import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
+import { verificaCandidatiMultifonte } from './verifica-candidati.js';
 import {
   chiaveComposizione,
   assicuraStatoScoperta,
@@ -193,13 +194,34 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
     10
   );
   const youtube = await processaYouTube(originale, env, db, chiave, massimoStrategie);
-  const statoFinale = await leggiStatoScoperta(db, chiave);
 
+  let verifica = { stato: 'non_eseguita', esaminati: 0, promossi: 0 };
+  try {
+    verifica = await verificaCandidatiMultifonte({ titolo, artista }, env, {
+      limite: intero(
+        opzioni.massimoCandidatiVerifica || configurazione.candidati_verifica_per_giro,
+        2,
+        5
+      ),
+      soglia: Number(configurazione.soglia_promozione_candidato || 90),
+      fetchFn: opzioni.fetchFn
+    });
+  } catch (e) {
+    verifica = {
+      stato: 'errore_non_bloccante',
+      esaminati: 0,
+      promossi: 0,
+      errore: String(e?.message || 'Errore verifica candidati').slice(0, 500)
+    };
+  }
+
+  const statoFinale = await leggiStatoScoperta(db, chiave);
   return {
     stato: 'ok',
     chiaveComposizione: chiave,
     piano,
     provider: { youtube },
+    verifica,
     candidatiTotali: Number(statoFinale?.candidati_totali || 0),
     fontiTotali: Number(statoFinale?.fonti_totali || 0),
     giriIA: Number(statoFinale?.giri_ia || 0),

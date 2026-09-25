@@ -10,17 +10,8 @@ test('flusso completo di una nuova composizione senza database', async () => {
   const richieste = [];
   const fetchFn = async (url) => {
     richieste.push(url);
-    if (url.includes('/recording/?query=')) {
-      return rispostaJson({ recordings: [{ id: 'rec-originale', score: 100 }] });
-    }
-    if (url.includes('/recording/rec-originale?')) {
-      return rispostaJson({
-        id: 'rec-originale',
-        title: 'Sapore di sale',
-        'artist-credit': [{ name: 'Gino Paoli' }],
-        releases: [{ date: '1963-06-01' }],
-        relations: [{ type: 'performance', work: { id: 'work-1', title: 'Sapore di sale' }, attributes: [] }]
-      });
+    if (url.includes('/work/?query=')) {
+      return rispostaJson({ works: [{ id: 'work-1', score: 100, title: 'Sapore di sale', language: 'ita' }] });
     }
     if (url.includes('/work/work-1?')) {
       return rispostaJson({
@@ -55,29 +46,80 @@ test('flusso completo di una nuova composizione senza database', async () => {
 
   const risultato = await cercaVersioni(
     { titolo: 'Sapore di sale', artista: 'Gino Paoli', ordine: 'asc' },
-    { VERSIONE_MOTORE: '0.1.0' },
+    { VERSIONE_MOTORE: '0.2.0' },
     { fetchFn }
   );
 
   assert.equal(risultato.stato, 'pronto');
   assert.equal(risultato.composizione.titolo, 'Sapore di sale');
+  assert.equal(risultato.composizione.anno, 1963);
+  assert.equal(risultato.composizione.metodoIndividuazione, 'opera per titolo e artista');
   assert.equal(risultato.versioniIndividuate, 3);
   assert.deepEqual(risultato.versioni.map(v => v.tipo), ['originale', 'cover', 'live']);
   assert.deepEqual(risultato.versioni.map(v => v.anno), [1963, 1970, 1980]);
-  assert.equal(richieste.length, 4);
+  assert.equal(richieste.length, 3);
+});
+
+test('non si ferma alla prima registrazione priva di relazione con una opera', async () => {
+  const richieste = [];
+  const fetchFn = async (url) => {
+    richieste.push(url);
+    if (url.includes('/work/?query=') && url.includes('artist')) {
+      return rispostaJson({ works: [] });
+    }
+    if (url.includes('/recording/?query=')) {
+      return rispostaJson({ recordings: [
+        { id: 'r1', score: 100, title: 'Brano', 'artist-credit': [{ name: 'Artista' }] },
+        { id: 'r2', score: 100, title: 'Brano', 'artist-credit': [{ name: 'Artista' }] },
+        { id: 'r3', score: 100, title: 'Brano', 'artist-credit': [{ name: 'Artista' }] }
+      ] });
+    }
+    if (url.includes('/recording/r1?') || url.includes('/recording/r2?')) {
+      const id = url.includes('/r1?') ? 'r1' : 'r2';
+      return rispostaJson({ id, title: 'Brano', 'artist-credit': [{ name: 'Artista' }], releases: [{ date: '1970' }], relations: [] });
+    }
+    if (url.includes('/recording/r3?')) {
+      return rispostaJson({
+        id: 'r3', title: 'Brano', 'artist-credit': [{ name: 'Artista' }], releases: [{ date: '1968' }],
+        relations: [{ type: 'performance', work: { id: 'w3', title: 'Brano' }, attributes: [] }]
+      });
+    }
+    if (url.includes('/work/w3?')) {
+      return rispostaJson({ id: 'w3', title: 'Brano', language: 'ita', relations: [{ type: 'composer', artist: { name: 'Autore' } }] });
+    }
+    if (url.includes('/recording?work=w3')) {
+      return rispostaJson({
+        'recording-count': 2,
+        recordings: [
+          { id: 'r3', title: 'Brano', 'artist-credit': [{ name: 'Artista' }], releases: [{ date: '1968' }], relations: [{ type: 'performance', work: { id: 'w3' }, attributes: [] }] },
+          { id: 'c1', title: 'Brano', 'artist-credit': [{ name: 'Coverista' }], releases: [{ date: '1972' }], relations: [{ type: 'performance', work: { id: 'w3' }, attributes: ['cover'] }] }
+        ]
+      });
+    }
+    if (url.includes('/work/?query=')) return rispostaJson({ works: [] });
+    throw new Error(`URL inatteso: ${url}`);
+  };
+
+  const risultato = await cercaVersioni(
+    { titolo: 'Brano', artista: 'Artista' },
+    { VERSIONE_MOTORE: '0.2.0' },
+    { fetchFn }
+  );
+
+  assert.equal(risultato.stato, 'pronto');
+  assert.equal(risultato.composizione.idMusicBrainz, 'w3');
+  assert.equal(risultato.composizione.metodoIndividuazione, 'registrazione collegata a opera');
+  assert.equal(risultato.composizione.anno, 1968);
+  assert.equal(risultato.versioniIndividuate, 2);
+  assert.ok(richieste.some(u => u.includes('/recording/r1?')));
+  assert.ok(richieste.some(u => u.includes('/recording/r2?')));
+  assert.ok(richieste.some(u => u.includes('/recording/r3?')));
 });
 
 test('riconosce e approfondisce una versione tradotta come adattamento', async () => {
   const fetchFn = async (url) => {
-    if (url.includes('/recording/?query=')) {
-      return rispostaJson({ recordings: [{ id: 'rec-originale', score: 100 }] });
-    }
-    if (url.includes('/recording/rec-originale?')) {
-      return rispostaJson({
-        id: 'rec-originale', title: 'Canzone', 'artist-credit': [{ name: 'Artista A' }],
-        releases: [{ date: '1965' }],
-        relations: [{ type: 'performance', work: { id: 'work-base', title: 'Canzone' }, attributes: [] }]
-      });
+    if (url.includes('/work/?query=')) {
+      return rispostaJson({ works: [{ id: 'work-base', score: 100, title: 'Canzone', language: 'ita' }] });
     }
     if (url.includes('/work/work-base?')) {
       return rispostaJson({
@@ -131,11 +173,7 @@ test('riconosce e approfondisce una versione tradotta come adattamento', async (
 
 test('se ci sono oltre 100 registrazioni espone il prossimo offset', async () => {
   const fetchFn = async (url) => {
-    if (url.includes('/recording/?query=')) return rispostaJson({ recordings: [{ id: 'r0', score: 100 }] });
-    if (url.includes('/recording/r0?')) return rispostaJson({
-      id: 'r0', title: 'Brano lungo', 'artist-credit': [{ name: 'A' }], releases: [{ date: '1960' }],
-      relations: [{ type: 'performance', work: { id: 'w0' }, attributes: [] }]
-    });
+    if (url.includes('/work/?query=')) return rispostaJson({ works: [{ id: 'w0', score: 100, title: 'Brano lungo', language: 'ita' }] });
     if (url.includes('/work/w0?')) return rispostaJson({ id: 'w0', title: 'Brano lungo', language: 'ita', relations: [] });
     if (url.includes('/recording?work=w0')) return rispostaJson({
       'recording-count': 240,

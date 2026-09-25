@@ -1,6 +1,6 @@
 import { normalizzaTesto } from './normalizzazione.js';
 
-const TIPI_GENERICI = new Set(['', 'cover', 'versione', 'dubbio', 'da verificare', 'non indicato']);
+const TIPI_INCERTI = new Set(['', 'versione', 'dubbio', 'da verificare', 'non indicato']);
 const TIPI_DISTINTIVI = new Set(['live', 'strumentale', 'remix', 'karaoke', 'demo', 'acustica', 'radio edit']);
 
 function testoTipo(versione = {}) {
@@ -46,12 +46,19 @@ function similaritaToken(a, b) {
   return unione ? comuni / unione : 0;
 }
 
-function tipoIncompatibile(a, b) {
+function relazioneTipo(a, b) {
   const ta = testoTipo(a);
   const tb = testoTipo(b);
-  if (!ta || !tb || ta === tb) return false;
-  if (TIPI_GENERICI.has(ta) || TIPI_GENERICI.has(tb)) return false;
-  return TIPI_DISTINTIVI.has(ta) || TIPI_DISTINTIVI.has(tb);
+  if (ta === tb) return 'compatibile';
+
+  const distintivoA = TIPI_DISTINTIVI.has(ta);
+  const distintivoB = TIPI_DISTINTIVI.has(tb);
+  const incertoA = TIPI_INCERTI.has(ta);
+  const incertoB = TIPI_INCERTI.has(tb);
+
+  if ((distintivoA && incertoB) || (distintivoB && incertoA)) return 'incerto';
+  if (distintivoA || distintivoB) return 'distinto';
+  return 'compatibile';
 }
 
 export function classificaRelazioneDuplicato(a = {}, b = {}) {
@@ -73,7 +80,8 @@ export function classificaRelazioneDuplicato(a = {}, b = {}) {
     return { stato: 'versione_distinta', punteggio: 0, motivi: ['interprete_diverso'] };
   }
 
-  if (tipoIncompatibile(a, b)) {
+  const relazioneTraTipi = relazioneTipo(a, b);
+  if (relazioneTraTipi === 'distinto') {
     return { stato: 'versione_distinta', punteggio: 20, motivi: ['tipo_di_versione_distinto'] };
   }
 
@@ -82,6 +90,13 @@ export function classificaRelazioneDuplicato(a = {}, b = {}) {
   const distanzaAnno = annoA && annoB ? Math.abs(annoA - annoB) : null;
 
   if (titoloA === titoloB) {
+    if (relazioneTraTipi === 'incerto') {
+      return {
+        stato: 'probabile_duplicato',
+        punteggio: 78,
+        motivi: ['titolo_e_interprete_uguali', 'tipo_versione_da_chiarire']
+      };
+    }
     if (distanzaAnno === null || distanzaAnno <= 1) {
       return {
         stato: 'duplicato_certo',

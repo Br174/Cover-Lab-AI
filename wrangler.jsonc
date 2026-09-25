@@ -19,7 +19,7 @@
     ]
   },
   "vars": {
-    "VERSIONE_MOTORE": "0.5.0",
+    "VERSIONE_MOTORE": "0.5.1",
     "MODELLO_CLASSIFICAZIONE": "@cf/zai-org/glm-4.7-flash",
     "LINGUA_INTERFACCIA": "it",
     "MASSIMO_OPERE_DERIVATE_PER_GIRO": "2",
@@ -40,7 +40,7 @@
       }
     ],
     "vars": {
-      "VERSIONE_MOTORE": "0.5.0",
+      "VERSIONE_MOTORE": "0.5.1",
       "MODELLO_CLASSIFICAZIONE": "@cf/zai-org/glm-4.7-flash",
       "LINGUA_INTERFACCIA": "it",
       "MASSIMO_OPERE_DERIVATE_PER_GIRO": "2",

@@ -1,0 +1,23 @@
+UAB_ENGINE_VERSION=UAB-CORE-V1.1
+UAB_PROJECT_NAME=Cover Lab AI
+UAB_PROJECT_CLASS=android
+UAB_MOTHER_REF=main
+UAB_LAB_PREFIX=lab/
+UAB_CANDIDATE_PREFIX=candidate/
+UAB_MOTHER_PREFIX=mother/
+UAB_BUILD_ROUTE=.github/workflows/android-apk.yml su runner standard GitHub Actions per repository pubblico
+UAB_CACHE_MODE=gradle
+UAB_RELEASE_MODE=immutable-mother
+UAB_CORE_REGRESSION_GATES=test automatici motore, validazione Wrangler, compilazione Android, verifica pacchetto LAB, presenza APK e ZIP, checksum SHA-256, assenza di segreti in chiaro
+UAB_ANDROID_PACKAGE_STRATEGY=parallel-lab
+UAB_SIGNING_STRATEGY=ephemeral-lab
+UAB_PATCH_REPACK=forbidden
+UAB_OUTPUT_TYPES=apk,zip
+
+NOTE OPERATIVE
+- Il repository e' pubblico: la rotta remota primaria e' GitHub Actions standard, sotto controllo UAB CORE.
+- Le build LAB/CANDIDATA sono artefatti temporanei e non devono diventare Release permanenti.
+- Le Release permanenti saranno create solo per una MADRE esplicitamente approvata, con tag/versione immutabile.
+- Il pacchetto debug/LAB usa il suffisso .lab per poter essere installato accanto alla futura versione stabile.
+- Nessun costo o fallback a pagamento e' autorizzato automaticamente.
+- Prima della consegna, UAB deve verificare sorgente richiesta, stato build, pacchetto, artefatti e checksum.

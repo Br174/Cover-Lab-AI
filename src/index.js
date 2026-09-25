@@ -4,6 +4,7 @@ import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { descriviPolicyFontiMedia } from './motore/policy-fonti-media.js';
 import { riepilogoPianoEvoluzione } from './motore/piano-evoluzione.js';
 import { descriviRegistaAI } from './motore/regista-ai.js';
+import { interpretaRicercaLibera } from './motore/ricerca-libera.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
@@ -54,6 +55,27 @@ function originaleDaRisultato(risultato, titolo, artista) {
   };
 }
 
+function programmaApprofondimenti(ctx, risultato, parametri, env, motivoCoda = 'richiesta diretta Music Lab') {
+  programma(ctx, accodaArchivioVivo(env.DB, {
+    titolo: parametri.titolo,
+    artista: parametri.artista,
+    priorita: 100,
+    motivo: motivoCoda
+  }));
+
+  const daMemoria = String(risultato?.provenienza || '').startsWith('memoria dei risultati');
+  if (!parametri.approfondisci && daMemoria && !risultato?.aggiornamentoInAttesa) {
+    programma(ctx, cercaVersioni({ ...parametri, approfondisci: true }, env));
+  }
+  if (!parametri.approfondisci && (daMemoria || risultato?.ricercaMultifonteNecessaria === true)) {
+    programma(ctx, eseguiScopertaMultifonte(
+      originaleDaRisultato(risultato, parametri.titolo, parametri.artista),
+      env,
+      { massimoStrategie: 1 }
+    ));
+  }
+}
+
 function statoMotore(env, fonti = null) {
   return {
     stato: 'operativo',
@@ -61,6 +83,7 @@ function statoMotore(env, fonti = null) {
     archivioVivo: 'predisposto',
     motoreMultifonte: 'predisposto',
     registaAI: descriviRegistaAI(),
+    ricercaLiberaDiagnostica: 'predisposta',
     nessunLimiteTotaleCover: true,
     sourceRouter: 'predisposto',
     circuitBreaker: 'predisposto',
@@ -159,6 +182,50 @@ export default {
       }
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/ricerca-libera') {
+      let corpo;
+      try { corpo = await request.json(); } catch { return errore('Il corpo della richiesta deve essere in formato JSON.'); }
+      const query = String(corpo?.query || corpo?.testo || '').trim();
+      const ordine = corpo?.ordine === 'desc' ? 'desc' : 'asc';
+      if (!query) return errore('Scrivere un titolo, un artista o altri dati utili per identificare il brano.');
+
+      try {
+        const interpretazione = await interpretaRicercaLibera(query, env);
+        if (!interpretazione?.titolo || !interpretazione?.artista) {
+          return json({
+            stato: 'selezione_necessaria',
+            messaggio: 'La ricerca è troppo generica per identificare con sicurezza una sola composizione. Aggiungere il titolo o l artista.',
+            ricercaLibera: {
+              testo: query,
+              interpretazione
+            },
+            versioni: [],
+            versioniIndividuate: 0
+          }, 422);
+        }
+
+        const parametri = {
+          titolo: interpretazione.titolo,
+          artista: interpretazione.artista,
+          ordine,
+          approfondisci: false
+        };
+        const risultato = await cercaVersioni(parametri, env);
+        programmaApprofondimenti(ctx, risultato, parametri, env, 'ricerca diagnostica manuale Cover Lab');
+
+        return json({
+          ...risultato,
+          ricercaLibera: {
+            testo: query,
+            interpretazione
+          }
+        });
+      } catch (e) {
+        console.error(e);
+        return errore('La ricerca libera non è stata completata.', 502, e?.message || 'Errore non specificato');
+      }
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/cerca-ancora') {
       let corpo;
       try { corpo = await request.json(); } catch { return errore('Il corpo della richiesta deve essere in formato JSON.'); }
@@ -196,26 +263,7 @@ export default {
 
       try {
         const risultato = await cercaVersioni(parametri, env);
-
-        programma(ctx, accodaArchivioVivo(env.DB, {
-          titolo: parametri.titolo,
-          artista: parametri.artista,
-          priorita: 100,
-          motivo: 'richiesta diretta Music Lab'
-        }));
-
-        const daMemoria = String(risultato?.provenienza || '').startsWith('memoria dei risultati');
-        if (!parametri.approfondisci && daMemoria && !risultato?.aggiornamentoInAttesa) {
-          programma(ctx, cercaVersioni({ ...parametri, approfondisci: true }, env));
-        }
-        if (!parametri.approfondisci && (daMemoria || risultato?.ricercaMultifonteNecessaria === true)) {
-          programma(ctx, eseguiScopertaMultifonte(
-            originaleDaRisultato(risultato, parametri.titolo, parametri.artista),
-            env,
-            { massimoStrategie: 1 }
-          ));
-        }
-
+        programmaApprofondimenti(ctx, risultato, parametri, env);
         return json(risultato);
       } catch (e) {
         console.error(e);

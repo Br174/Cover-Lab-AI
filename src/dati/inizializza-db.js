@@ -1,6 +1,4 @@
 const STRUTTURA_BASE = `
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS composizioni (
   id TEXT PRIMARY KEY,
   chiave_ricerca TEXT NOT NULL UNIQUE,

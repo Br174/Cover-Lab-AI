@@ -1,6 +1,7 @@
 import { generaPianoScopertaConIA, interpretaRisultatiSorgenteConIA } from '../fonti/ia-scoperta.js';
 import { cercaSuYouTube, statoProviderYouTube } from '../fonti/youtube.js';
 import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
+import { riapriScopertaSeScaduta } from '../dati/freschezza-scoperta.js';
 import { verificaCandidatiMultifonte } from './verifica-candidati.js';
 import {
   chiaveComposizione,
@@ -179,6 +180,12 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
     throw e;
   }
 
+  const freschezza = await riapriScopertaSeScaduta(
+    db,
+    chiave,
+    intero(configurazione.multifonte_ricontrollo_ore, 168, 24 * 365)
+  );
+
   const piano = await generaNuovePiste({
     titolo,
     artista,
@@ -219,6 +226,7 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
   return {
     stato: 'ok',
     chiaveComposizione: chiave,
+    freschezza,
     piano,
     provider: { youtube },
     verifica,

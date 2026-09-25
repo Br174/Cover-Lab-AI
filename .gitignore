@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.dev.vars
+android/.gradle/
+android/local.properties
+android/app/build/
+*.apk

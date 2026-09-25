@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cover-lab-ai",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-25",
+  "ai": {
+    "binding": "AI"
+  },
+  "vars": {
+    "VERSIONE_MOTORE": "0.2.0",
+    "MODELLO_CLASSIFICAZIONE": "@cf/zai-org/glm-4.7-flash",
+    "LINGUA_INTERFACCIA": "it",
+    "MASSIMO_OPERE_DERIVATE_PER_GIRO": "2",
+    "MASSIMO_CANDIDATI_IA_PER_GIRO": "12"
+  }
+}

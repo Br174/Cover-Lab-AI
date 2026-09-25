@@ -8,6 +8,7 @@ const MASSIMO_CANDIDATI_CONTESTO = 80;
 const MASSIMO_STRATEGIE_TORNATA = 8;
 const MASSIMO_CANDIDATI_TORNATA = 16;
 const MASSIMO_RISULTATI_SORGENTE_TORNATA = 30;
+const MASSIMO_DOMANDE_DIAGNOSTICA = 16;
 const TIMEOUT_PIANO_MS = 30000;
 const TIMEOUT_FILTRO_MS = 25000;
 
@@ -56,10 +57,11 @@ export async function generaPianoScopertaConIA({
   lingua = null,
   paese = null,
   strategieGiaUsate = [],
-  candidatiGiaNoti = []
+  candidatiGiaNoti = [],
+  agenda = null
 }, env) {
   if (!env?.AI?.run) {
-    return { disponibile: false, strategie: [], candidati: [], esaurita: false };
+    return { disponibile: false, strategie: [], candidati: [], domandeEsplorate: [], esaurita: false };
   }
 
   const esclusioniStrategie = strategieGiaUsate
@@ -67,31 +69,41 @@ export async function generaPianoScopertaConIA({
     .map(s => ({ provider: s.provider, query: s.query }));
   const esclusioniCandidati = candidatiGiaNoti
     .slice(0, MASSIMO_CANDIDATI_CONTESTO)
-    .map(c => ({ titolo: c.titolo, interprete: c.interprete, anno: c.anno }));
+    .map(c => ({ titolo: c.titolo, interprete: c.interprete, anno: c.anno, lingua: c.lingua, paese: c.paese }));
+  const domandeAgenda = (Array.isArray(agenda?.domande) ? agenda.domande : [])
+    .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
+    .map(d => ({ id: testo(d?.id, 120), domanda: testo(d?.domanda, 500), obiettivo: testo(d?.obiettivo, 200) }))
+    .filter(d => d.domanda);
 
   const messaggi = [
     {
       role: 'system',
       content: [
-        'Sei il ricercatore musicale di Cover Lab AI.',
-        'Il tuo compito non e certificare: devi proporre piste plausibili per trovare cover, adattamenti e versioni della STESSA composizione.',
-        'Cerca mentalmente anche versioni in altre lingue, titoli tradotti o completamente differenti, adattamenti locali, artisti internazionali, versioni storiche e recenti.',
+        'Sei il REGISTA della ricerca musicale di Cover Lab AI, non un semplice filtro di database.',
+        'PRIMA di consultare fonti esterne devi autointerrogarti usando le domande dell agenda e la tua conoscenza generale della musica.',
+        'Per ogni domanda pensa a versioni, interpreti, titoli tradotti o completamente differenti, adattamenti, lingue, paesi, anni e crediti che conosci o ritieni plausibili.',
+        'Le tue risposte interne NON sono prove: trasformale in IPOTESI da verificare e in strategie concrete per cercare conferme sulle fonti reali.',
+        'Se ricordi una versione specifica, proponila come candidato e crea almeno una strategia utile a confermarla quando possibile.',
+        'Se un dato e incerto non inventarlo: lascialo nullo e genera una strategia per verificarlo.',
+        'Le nuove informazioni possono generare nuove domande e nuove piste nei giri successivi.',
         `In QUESTA singola tornata restituisci al massimo ${MASSIMO_STRATEGIE_TORNATA} strategie e ${MASSIMO_CANDIDATI_TORNATA} candidati, scegliendo le piste nuove a maggior valore.`,
-        'NON esiste un limite complessivo: altre tornate continueranno a cercare e ad ampliare il catalogo.',
+        'NON esiste alcun limite complessivo al numero di cover: i limiti della tornata servono solo a proteggere tempo e risorse e l Archivio Vivo continuera nei giri successivi.',
         'Non ripetere strategie o candidati gia forniti.',
         'Per ogni query indica il provider preferito tra youtube, cataloghi oppure internet_archive.',
-        'YouTube e usato come fonte di scoperta: Cover Lab non cerca apposta un video YouTube per una cover trovata altrove.',
-        'I candidati sono IPOTESI e verranno verificati dopo; se un dato non e ragionevolmente noto lascialo nullo invece di inventarlo.',
-        'Imposta esaurita=true solo se non riesci davvero a proporre altre piste sostanzialmente nuove.',
-        'Rispondi esclusivamente con JSON valido nel formato {strategie:[...], candidati:[...], esaurita:boolean}.',
+        'YouTube e una fonte di scoperta: Cover Lab non cerca apposta un video YouTube per una cover trovata altrove.',
+        'Imposta esaurita=true solo se, per le domande di questa agenda, non riesci davvero a proporre altre piste sostanzialmente nuove; non significa che il catalogo mondiale sia completo.',
+        'Rispondi esclusivamente con JSON valido nel formato {domandeEsplorate:[...], strategie:[...], candidati:[...], nuoveDomande:[...], esaurita:boolean}.',
+        'domandeEsplorate contiene gli id delle domande dell agenda che hai effettivamente considerato.',
         'Strategia: {provider, query, lingua, paese, priorita}.',
-        'Candidato: {titolo, interprete, anno, lingua, paese, tipo, affidabilita}.'
+        'Candidato: {titolo, interprete, anno, lingua, paese, tipo, affidabilita}.',
+        'nuoveDomande contiene brevi domande investigative nate dalle ipotesi appena formulate; serviranno a orientare i giri successivi.'
       ].join(' ')
     },
     {
       role: 'user',
       content: JSON.stringify({
         composizione: { titolo, artista, compositore, anno, lingua, paese },
+        agendaAutointerrogazione: domandeAgenda,
         strategieGiaUsate: esclusioniStrategie,
         candidatiGiaNoti: esclusioniCandidati
       })
@@ -104,8 +116,8 @@ export async function generaPianoScopertaConIA({
       env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
         messages: messaggi,
         response_format: { type: 'json_object' },
-        temperature: 0.3,
-        max_completion_tokens: 1200
+        temperature: 0.25,
+        max_completion_tokens: 1500
       }),
       TIMEOUT_PIANO_MS,
       'PIANO_SCOPERTA'
@@ -115,6 +127,8 @@ export async function generaPianoScopertaConIA({
       disponibile: true,
       strategie: [],
       candidati: [],
+      domandeEsplorate: [],
+      nuoveDomande: [],
       esaurita: false,
       errore: e?.message || 'Errore AI non specificato'
     };
@@ -155,10 +169,21 @@ export async function generaPianoScopertaConIA({
     })
     .filter(Boolean);
 
+  const domandeEsplorate = (Array.isArray(dati.domandeEsplorate) ? dati.domandeEsplorate : [])
+    .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
+    .map(x => testo(x, 120))
+    .filter(Boolean);
+  const nuoveDomande = (Array.isArray(dati.nuoveDomande) ? dati.nuoveDomande : [])
+    .slice(0, 12)
+    .map(x => testo(x, 400))
+    .filter(Boolean);
+
   return {
     disponibile: true,
     strategie,
     candidati,
+    domandeEsplorate,
+    nuoveDomande,
     esaurita: dati.esaurita === true
   };
 }

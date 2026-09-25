@@ -52,8 +52,20 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   {
     id: 'ricerca_iterativa_autoespansiva',
     stato: STATO_PIANO.PARZIALE,
-    obiettivo: 'Le scoperte devono generare nuove piste, query, lingue, titoli alternativi e ulteriori ricerche fino a saturazione pratica.',
+    obiettivo: 'Le scoperte devono generare nuove piste, query, lingue, titoli alternativi e ulteriori ricerche fino a saturazione pratica temporanea.',
     impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti']
+  },
+  {
+    id: 'regista_ai_autointerrogazione_guidata',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Prima di cercare sulle fonti, l AI si autointerroga sistematicamente su versioni, paesi, lingue, titoli alternativi, interpreti e crediti; usa la propria conoscenza per generare ipotesi e piste, poi cerca conferme reali prima della promozione.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti', 'affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'nessun_limite_totale_cover',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Non esiste un limite numerico predefinito alle cover archiviate. I limiti riguardano solo durata e carico della singola tornata; l Archivio Vivo continua nei giri successivi e Music Lab visualizza 20 risultati alla volta.',
+    impatto: ['quantita_dei_risultati', 'velocita_dei_risultati']
   },
   {
     id: 'strategie_deterministiche_di_base',
@@ -93,9 +105,9 @@ export const PIANO_EVOLUZIONE = Object.freeze([
   },
   {
     id: 'gestione_conflitti',
-    stato: STATO_PIANO.DA_FARE,
-    obiettivo: 'Registrare e mantenere espliciti i conflitti fra fonti invece di scegliere arbitrariamente un dato.',
-    impatto: ['affidabilita_reale_delle_cover']
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Le discordanzie tra fonti devono attivare una indagine: l AI formula le possibili spiegazioni, genera domande e ricerche mirate, distingue concetti diversi come composizione, pubblicazione e prima registrazione, e risolve il dato quando trova conferme sufficienti. Solo se le prove restano insufficienti il dato rimane incerto.',
+    impatto: ['affidabilita_reale_delle_cover', 'scansione_web_e_piattaforme_con_risultati_concreti']
   },
   {
     id: 'deduplicazione_avanzata',

@@ -5,6 +5,11 @@ import { riapriScopertaSeScaduta } from '../dati/freschezza-scoperta.js';
 import { verificaCandidatiMultifonte } from './verifica-candidati.js';
 import { eseguiRicercaProvider } from './source-router.js';
 import {
+  generaStrategieDeterministiche,
+  generaStrategieFallback,
+  ricercaSospettosamentePovera
+} from './strategie-base.js';
+import {
   chiaveComposizione,
   assicuraStatoScoperta,
   leggiStatoScoperta,
@@ -82,6 +87,27 @@ function statoStrategiaDopoErrore(esito) {
   return 'errore';
 }
 
+async function aggiungiFallbackSePovero({
+  db,
+  chiave,
+  originale,
+  provider,
+  configurazione,
+  risultatiGrezzi,
+  candidatiUtili
+}) {
+  if (!ricercaSospettosamentePovera({
+    risultatiGrezzi,
+    candidatiUtili,
+    soglia: intero(configurazione.risultati_minimi_sospetti, 3, 20)
+  })) return 0;
+
+  const giaNote = await leggiStrategieNote(db, chiave);
+  const fallback = generaStrategieFallback(originale, provider.id, giaNote);
+  const perGiro = intero(configurazione.strategie_fallback_per_giro, 3, 10);
+  return salvaStrategieScoperta(db, chiave, fallback.slice(0, perGiro));
+}
+
 async function processaProviderScoperta(originale, env, db, chiave, provider, massimoStrategie, configurazione) {
   const strategie = await prossimeStrategiePerProvider(db, chiave, provider, massimoStrategie);
   const statoDichiarato = provider.stato?.() || { disponibile: true, stato: 'configurato' };
@@ -91,7 +117,10 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
       stato: statoDichiarato.stato || 'nessuna_strategia',
       strategieElaborate: 0,
       candidati: 0,
-      fonti: 0
+      fonti: 0,
+      risultatiGrezzi: 0,
+      candidatiInterpretati: 0,
+      strategieFallbackNuove: 0
     };
   }
 
@@ -100,6 +129,9 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
   let fontiSalvate = 0;
   let strategieInAttesa = 0;
   let ultimoStato = statoDichiarato.stato || 'ok';
+  let risultatiGrezzi = 0;
+  let candidatiInterpretati = 0;
+  let strategieFallbackNuove = 0;
 
   for (const strategia of strategie) {
     const pagina = await eseguiRicercaProvider({
@@ -130,7 +162,10 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
     }
 
     const elementi = Array.isArray(pagina.elementi) ? pagina.elementi : [];
+    risultatiGrezzi += elementi.length;
     const interpretati = await interpretaRisultatiSorgenteConIA(originale, elementi, env);
+    candidatiInterpretati += interpretati.length;
+
     for (const candidato of interpretati) {
       const elemento = elementi[candidato.indice];
       if (!elemento) continue;
@@ -158,6 +193,16 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
       incrementaPagina: true
     });
     strategieElaborate += 1;
+
+    strategieFallbackNuove += await aggiungiFallbackSePovero({
+      db,
+      chiave,
+      originale,
+      provider,
+      configurazione,
+      risultatiGrezzi: elementi.length,
+      candidatiUtili: interpretati.length
+    });
   }
 
   await aggiornaStatisticheScoperta(db, chiave, provider.id);
@@ -167,7 +212,10 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
     strategieElaborate,
     strategieInAttesa,
     candidati: candidatiSalvati,
-    fonti: fontiSalvate
+    fonti: fontiSalvate,
+    risultatiGrezzi,
+    candidatiInterpretati,
+    strategieFallbackNuove
   };
 }
 
@@ -196,30 +244,44 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
     throw e;
   }
 
-  const freschezza = await riapriScopertaSeScaduta(
-    db, chiave, intero(configurazione.multifonte_ricontrollo_ore, 168, 24 * 365)
-  );
-  const piano = await generaNuovePiste({
+  const datiOriginale = {
     titolo,
     artista,
     compositore: originale.compositore || null,
     anno: originale.anno || null,
     lingua: originale.lingua || null,
     paese: originale.paese || null
-  }, env, db, chiave);
+  };
+
+  const freschezza = await riapriScopertaSeScaduta(
+    db, chiave, intero(configurazione.multifonte_ricontrollo_ore, 168, 24 * 365)
+  );
+
+  const strategieDeterministicheNuove = await salvaStrategieScoperta(
+    db,
+    chiave,
+    generaStrategieDeterministiche(datiOriginale)
+  );
+
+  const piano = await generaNuovePiste(datiOriginale, env, db, chiave);
 
   const massimoStrategie = intero(
     opzioni.massimoStrategie || configurazione.strategie_provider_per_giro,
     2,
     10
   );
-  const providers = providerScoperta(env, {
+  let providers = providerScoperta(env, {
     fetchAppleFn: opzioni.fetchAppleFn,
-    fetchYouTubeFn: opzioni.fetchYouTubeFn
+    fetchYouTubeFn: opzioni.fetchYouTubeFn,
+    fetchInternetArchiveFn: opzioni.fetchInternetArchiveFn
   });
+  if (String(configurazione.internet_archive_abilitato || '1') !== '1') {
+    providers = providers.filter(p => p.id !== 'internet_archive');
+  }
+
   const esitiProvider = await Promise.all(
     providers.map(provider => processaProviderScoperta(
-      originale,
+      datiOriginale,
       env,
       db,
       chiave,
@@ -251,10 +313,18 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
   }
 
   const statoFinale = await leggiStatoScoperta(db, chiave);
+  const strategieFallbackNuove = esitiProvider.reduce(
+    (somma, esito) => somma + Number(esito.strategieFallbackNuove || 0),
+    0
+  );
+
   return {
     stato: 'ok',
     chiaveComposizione: chiave,
     freschezza,
+    strategieDeterministicheNuove,
+    strategieFallbackNuove,
+    antiZeroAttivato: strategieFallbackNuove > 0,
     piano,
     provider,
     verifica,

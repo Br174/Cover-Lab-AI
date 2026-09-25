@@ -11,7 +11,7 @@ test('l IA genera strategie multi-fonte e mantiene i candidati come ipotesi', as
           response: {
             strategie: [
               { provider: 'youtube', query: 'Sapore di sale cover', lingua: 'it', priorita: 95 },
-              { provider: 'web', query: '"Sapore di sale" adaptation', priorita: 80 },
+              { provider: 'internet_archive', query: '"Sapore di sale" adaptation', priorita: 80 },
               { provider: 'non-ammesso', query: 'da scartare', priorita: 100 }
             ],
             candidati: [
@@ -38,7 +38,7 @@ test('l IA genera strategie multi-fonte e mantiene i candidati come ipotesi', as
   assert.equal(piano.disponibile, true);
   assert.equal(piano.esaurita, false);
   assert.equal(piano.strategie.length, 2);
-  assert.deepEqual(piano.strategie.map(s => s.provider), ['youtube', 'web']);
+  assert.deepEqual(piano.strategie.map(s => s.provider), ['youtube', 'internet_archive']);
   assert.equal(piano.candidati.length, 1);
   assert.equal(piano.candidati[0].interprete, 'Interprete X');
   assert.equal(piano.candidati[0].affidabilita, 80, 'un ipotesi IA non puo superare 80 senza fonte');

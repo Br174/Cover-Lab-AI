@@ -8,6 +8,11 @@ export const CAPACITA_PROVIDER = Object.freeze({
   VERIFICA: 'verifica'
 });
 
+function annoDaData(valore) {
+  const match = String(valore || '').match(/^(\d{4})/);
+  return match ? Number(match[1]) : null;
+}
+
 function descriptorMusicBrainz() {
   return {
     id: 'musicbrainz',
@@ -43,6 +48,19 @@ function descriptorYouTube(env, opzioni = {}) {
         pageToken: cursore,
         maxResults: limite
       }, env, opzioni.fetchYouTubeFn || fetch, controllo.signal || null);
+    },
+    preparaCandidato(candidato) {
+      return { ...candidato };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'youtube',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: elemento.titolo,
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
+      };
     }
   };
 }
@@ -75,6 +93,24 @@ function descriptorApple(env, opzioni = {}) {
         precedenteCursore: null,
         totaleStimato: Number(risultato.totale || 0),
         risultatiPerPagina: Number((risultato.elementi || []).length)
+      };
+    },
+    preparaCandidato(candidato, elemento) {
+      return {
+        ...candidato,
+        interprete: candidato.interprete || elemento?.interprete || null,
+        anno: candidato.anno || annoDaData(elemento?.dataPubblicazione),
+        paese: candidato.paese || elemento?.paese || null
+      };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'apple_catalogo',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: [elemento.interprete, elemento.titolo].filter(Boolean).join(' — '),
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
       };
     }
   };

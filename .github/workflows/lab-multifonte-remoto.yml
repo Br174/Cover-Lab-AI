@@ -1,6 +1,5 @@
-name: LAB temporanea - Multi-fonte remoto
+name: LAB - Collaudo remoto Cover Lab AI
 
-# Commit di rilancio anteprima dopo riapertura della PR tecnica LAB.
 on:
   push:
     branches:
@@ -12,96 +11,80 @@ jobs:
   verifica:
     runs-on: ubuntu-latest
     steps:
-      - name: Migra D1, genera piste AI e verifica isolamento candidati
+      - name: Verifica anteprima Cloudflare e ricerca libera
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
-          PAGINA="$BASE/api/versioni?titolo=Sapore%20di%20sale&artista=Gino%20Paoli&ordine=asc&offset=0"
 
-          echo "Attendo LAB 0.4.1..."
+          echo "Attendo la LAB Cover Lab AI 0.7.0..."
           PRONTO=0
           for TENTATIVO in $(seq 1 60); do
             CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
-            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.4.1"' /tmp/root.json; then
+            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.7.0"' /tmp/root.json; then
               PRONTO=1
               break
             fi
-            echo "Tentativo $TENTATIVO: anteprima non ancora 0.4.1 (HTTP $CODICE_STATO)"
+            echo "Tentativo $TENTATIVO: anteprima non ancora 0.7.0 (HTTP $CODICE_STATO)"
             sleep 4
           done
           test "$PRONTO" = "1"
 
-          CODICE=$(curl --silent --show-error --max-time 15 -o /tmp/migra.json -w '%{http_code}' "$BASE/__lab-multifonte-migra")
-          test "$CODICE" = "200"
-          echo "--- MIGRAZIONE 0003 REMOTA ---"
-          cat /tmp/migra.json
+          echo "--- STATO MOTORE REMOTO ---"
+          cat /tmp/root.json
           echo
           python - <<'PY'
           import json
-          d=json.load(open('/tmp/migra.json',encoding='utf-8'))
-          attese={'stato_scoperta_composizione','strategie_scoperta','candidati_scoperta','fonti_candidato'}
-          assert d.get('stato') == 'ok', d
-          assert set(d.get('tabelle') or []) == attese, d
-          cfg={x['chiave']:x['valore'] for x in d.get('configurazione') or []}
-          assert cfg.get('multifonte_abilitato') == '1', cfg
-          print('Migrazione multi-fonte verificata:', sorted(attese))
+          d=json.load(open('/tmp/root.json',encoding='utf-8'))
+          assert d.get('versione') == '0.7.0', d
+          assert d.get('stato') == 'operativo', d
+          assert d.get('ricercaLiberaDiagnostica') == 'predisposta', d
+          assert d.get('autocontrolloRisultati') == 'predisposto', d
+          assert d.get('nessunLimiteTotaleCover') is True, d
+          assert d.get('lottoMusicLab') == 20, d
+          regista=d.get('registaAI') or {}
+          assert regista, d
+          print('OK: motore LAB 0.7.0 raggiungibile e funzioni principali esposte.')
           PY
 
-          curl --fail --silent --show-error --max-time 20 "$PAGINA" -o /tmp/prima.json
-          PRIMA=$(python - <<'PY'
-          import json
-          print(int(json.load(open('/tmp/prima.json',encoding='utf-8')).get('totale') or 0))
-          PY
-          )
-          echo "Versioni visibili prima della prova: $PRIMA"
-
-          echo "--- AUTO-INTERROGAZIONE AI ---"
-          CODICE_PROVA=$(curl --silent --show-error --max-time 45 -o /tmp/prova.json -w '%{http_code}' "$BASE/__lab-multifonte-prova")
-          echo "HTTP prova: $CODICE_PROVA"
-          cat /tmp/prova.json
+          echo "--- ARCHIVIO REMOTO: PRIMA PAGINA DA 20 ---"
+          CODICE_PAGINA=$(curl --silent --show-error --max-time 20 -o /tmp/pagina.json -w '%{http_code}' \
+            "$BASE/api/versioni?titolo=Nel%20blu%20dipinto%20di%20blu&artista=Domenico%20Modugno&ordine=asc&offset=0" || true)
+          echo "HTTP archivio: $CODICE_PAGINA"
+          cat /tmp/pagina.json || true
           echo
-          test "$CODICE_PROVA" = "200"
+          test "$CODICE_PAGINA" = "200"
           python - <<'PY'
           import json
-          d=json.load(open('/tmp/prova.json',encoding='utf-8'))
-          assert d.get('stato') == 'ok', d
-          piano=d.get('piano') or {}
-          assert piano.get('stato') in ('ok','ia_esaurita','errore_ia'), piano
-          yt=(d.get('provider') or {}).get('youtube') or {}
-          assert yt.get('stato') in ('chiave_da_configurare','configurato','ok'), yt
-          if yt.get('stato') == 'chiave_da_configurare':
-              assert int(yt.get('strategieElaborate') or 0) == 0, yt
-          print('Giri IA:', d.get('giriIA'), 'candidati:', d.get('candidatiTotali'), 'YouTube:', yt.get('stato'))
+          d=json.load(open('/tmp/pagina.json',encoding='utf-8'))
+          versioni=d.get('versioni') or []
+          assert len(versioni) <= 20, len(versioni)
+          assert 'totale' in d, d
+          print('OK: paginazione Music Lab massimo 20 per pagina. Totale archivio:', d.get('totale'))
           PY
 
-          echo "--- STATO PERSISTITO ---"
-          curl --fail --silent --show-error --max-time 20 "$BASE/__lab-multifonte-stato" -o /tmp/stato.json
-          cat /tmp/stato.json
+          echo "--- RICERCA LIBERA DIAGNOSTICA ---"
+          CODICE_RICERCA=$(curl --silent --show-error --max-time 60 -o /tmp/ricerca.json -w '%{http_code}' \
+            -X POST "$BASE/api/ricerca-libera" \
+            -H 'Content-Type: application/json' \
+            --data '{"query":"Gino Paoli, Sapore di sale","ordine":"asc"}' || true)
+          echo "HTTP ricerca libera: $CODICE_RICERCA"
+          cat /tmp/ricerca.json || true
           echo
+          test "$CODICE_RICERCA" = "200"
           python - <<'PY'
           import json
-          d=json.load(open('/tmp/stato.json',encoding='utf-8'))
-          assert d.get('stato') == 'ok', d
-          assert d.get('riepilogo') is not None, d
-          strategie=d.get('strategie') or []
-          candidati=d.get('candidati') or []
-          assert len(strategie) > 0 or len(candidati) > 0, d
-          for c in candidati:
-              assert c.get('stato') == 'da_verificare', c
-              assert int(c.get('affidabilita_proposta') or 0) <= 80, c
-          for s in strategie:
-              if s.get('provider') == 'youtube' and s.get('stato') == 'attesa_provider':
-                  assert int(s.get('pagine_analizzate') or 0) == 0, s
-          print('Strategie:', len(strategie), 'candidati pendenti:', len(candidati))
+          d=json.load(open('/tmp/ricerca.json',encoding='utf-8'))
+          assert d.get('stato') in ('pronto','ricerca_incompleta'), d
+          rl=d.get('ricercaLibera') or {}
+          interpretazione=rl.get('interpretazione') or {}
+          assert interpretazione.get('titolo'), interpretazione
+          assert interpretazione.get('artista'), interpretazione
+          assert isinstance(d.get('versioni') or [], list), d
+          assert 'autocontrollo' in d, d
+          print('OK: barra libera -> identificazione composizione -> motore Cover Lab.')
+          print('Composizione interpretata:', interpretazione.get('artista'), '-', interpretazione.get('titolo'))
+          print('Versioni nella risposta:', len(d.get('versioni') or []))
           PY
 
-          curl --fail --silent --show-error --max-time 20 "$PAGINA" -o /tmp/dopo.json
-          DOPO=$(python - <<'PY'
-          import json
-          print(int(json.load(open('/tmp/dopo.json',encoding='utf-8')).get('totale') or 0))
-          PY
-          )
-          echo "Versioni visibili dopo la prova: $DOPO"
-          test "$PRIMA" = "$DOPO"
-          echo "OK: i candidati IA non sono stati esposti come cover verificate a Music Lab."
+          echo "COLLAUDO REMOTO LAB COMPLETATO."

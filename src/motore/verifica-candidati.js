@@ -12,9 +12,12 @@ import {
 } from '../dati/versioni-verificate.js';
 import {
   individuaConflittiTraCandidatoEVerifica,
-  salvaConflittiVersione
+  salvaConflittiVersione,
+  aggiornaIndagineConflitto
 } from '../dati/conflitti-versione.js';
+import { salvaStrategieScoperta } from '../dati/scoperta.js';
 import { verificaCandidatoSuMusicBrainz } from '../fonti/musicbrainz-verifica.js';
+import { indagaConflittoConIA } from './indagine-conflitti-ai.js';
 
 function limita(n, min = 0, max = 100) {
   const v = Number(n);
@@ -74,6 +77,66 @@ function versioneDaCandidato(candidato, affidabilita) {
   };
 }
 
+function originalePerIndagine(composizione) {
+  return {
+    titolo: composizione.titolo_canonico,
+    artista: composizione.artista_originale,
+    compositore: composizione.compositore || null,
+    anno: composizione.anno_originale || null,
+    lingua: composizione.lingua_originale || null,
+    paese: composizione.paese_origine || null
+  };
+}
+
+async function avviaIndaginiConflitti({
+  db,
+  env,
+  composizione,
+  versione,
+  versioneId,
+  conflitti,
+  limite = 2
+}) {
+  if (!conflitti?.length) {
+    return { avviate: 0, strategieNuove: 0 };
+  }
+
+  let avviate = 0;
+  let strategieNuove = 0;
+  const massimo = Math.max(1, Math.min(5, Number(limite) || 2));
+
+  for (const conflitto of conflitti.slice(0, massimo)) {
+    const indagine = await indagaConflittoConIA({
+      originale: originalePerIndagine(composizione),
+      versione,
+      conflitto
+    }, env);
+
+    if (!indagine?.disponibile || indagine?.errore) continue;
+
+    const nuove = await salvaStrategieScoperta(
+      db,
+      composizione.chiave_ricerca,
+      indagine.strategie || []
+    );
+
+    const aggiornata = await aggiornaIndagineConflitto(
+      db,
+      versioneId,
+      conflitto,
+      indagine,
+      nuove
+    );
+
+    if (aggiornata) {
+      avviate += 1;
+      strategieNuove += Number(nuove || 0);
+    }
+  }
+
+  return { avviate, strategieNuove };
+}
+
 async function migrazioneVerificaDisponibile(db) {
   try {
     await db.prepare('SELECT affidabilita_verificata, versione_id FROM candidati_scoperta LIMIT 1').all();
@@ -104,6 +167,8 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
   const opereDerivate = await opereCollegateComposizione(db, composizione.id);
   const esiti = [];
   let promossi = 0;
+  let indaginiConflittiAvviate = 0;
+  let strategieConflittiNuove = 0;
 
   for (const candidato of candidati) {
     const fonti = await fontiDelCandidato(db, candidato.id);
@@ -157,9 +222,21 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
     await salvaFontiVersione(db, versioneId, fontiFinali);
 
     let conflitti = [];
+    let indagineConflitti = { avviate: 0, strategieNuove: 0 };
     if (strutturata?.verificato && strutturata?.versione) {
       conflitti = individuaConflittiTraCandidatoEVerifica(candidato, strutturata.versione, fonti);
       await salvaConflittiVersione(db, versioneId, conflitti);
+      indagineConflitti = await avviaIndaginiConflitti({
+        db,
+        env,
+        composizione,
+        versione,
+        versioneId,
+        conflitti,
+        limite: opzioni.massimoConflittiIndagine || 2
+      });
+      indaginiConflittiAvviate += indagineConflitti.avviate;
+      strategieConflittiNuove += indagineConflitti.strategieNuove;
     }
 
     const crediti = [...(strutturata?.crediti || [])];
@@ -187,7 +264,9 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       stato: 'verificato',
       affidabilita: valutazione.affidabilita,
       statoVerifica: versione.statoVerifica || 'verificato_multifonte',
-      conflittiAperti: conflitti.length,
+      conflittiRilevati: conflitti.length,
+      conflittiInIndagine: indagineConflitti.avviate,
+      strategieConflittiNuove: indagineConflitti.strategieNuove,
       versioneId,
       metodo: valutazione.metodo
     });
@@ -197,6 +276,8 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
     stato: 'ok',
     esaminati: candidati.length,
     promossi,
+    indaginiConflittiAvviate,
+    strategieConflittiNuove,
     esiti
   };
 }

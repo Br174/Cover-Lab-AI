@@ -58,7 +58,7 @@ export default {
     if (request.method === 'GET' && url.pathname === '/') {
       return json({
         servizio: 'Cover Lab AI',
-        versione: env.VERSIONE_MOTORE || '0.6.0',
+        versione: env.VERSIONE_MOTORE || '0.6.1',
         stato: 'operativo',
         lingua: 'italiano',
         database: env.DB ? 'collegato' : 'da collegare',
@@ -84,7 +84,7 @@ export default {
       }
       return json({
         stato: 'operativo',
-        versione: env.VERSIONE_MOTORE || '0.6.0',
+        versione: env.VERSIONE_MOTORE || '0.6.1',
         archivioVivo: 'predisposto',
         motoreMultifonte: 'predisposto',
         sourceRouter: 'predisposto',
@@ -203,8 +203,11 @@ export default {
           motivo: 'richiesta diretta Music Lab'
         }));
 
-        if (!parametri.approfondisci && risultato?.provenienza === 'memoria dei risultati') {
+        const daMemoria = String(risultato?.provenienza || '').startsWith('memoria dei risultati');
+        if (!parametri.approfondisci && daMemoria && !risultato?.aggiornamentoInAttesa) {
           programma(ctx, cercaVersioni({ ...parametri, approfondisci: true }, env));
+        }
+        if (!parametri.approfondisci && (daMemoria || risultato?.ricercaMultifonteNecessaria === true)) {
           programma(ctx, eseguiScopertaMultifonte(
             originaleDaRisultato(risultato, parametri.titolo, parametri.artista),
             env,

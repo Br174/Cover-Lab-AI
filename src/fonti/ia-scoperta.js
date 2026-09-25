@@ -1,5 +1,16 @@
 const PROVIDER_AMMESSI = new Set(['youtube', 'web', 'cataloghi']);
 
+// Nessun limite complessivo al catalogo: questi limiti valgono SOLO per una
+// singola tornata, così l'Archivio Vivo può continuare nei giri successivi
+// senza bloccare la risposta per decine di secondi.
+const MASSIMO_STRATEGIE_CONTESTO = 40;
+const MASSIMO_CANDIDATI_CONTESTO = 80;
+const MASSIMO_STRATEGIE_TORNATA = 8;
+const MASSIMO_CANDIDATI_TORNATA = 16;
+const MASSIMO_RISULTATI_SORGENTE_TORNATA = 30;
+const TIMEOUT_PIANO_MS = 30000;
+const TIMEOUT_FILTRO_MS = 25000;
+
 function leggiJson(raw) {
   if (!raw) return null;
   if (raw.response && typeof raw.response === 'object') return raw.response;
@@ -23,6 +34,20 @@ function numero(valore, minimo = 0, massimo = 100) {
   return Math.max(minimo, Math.min(massimo, Math.round(n)));
 }
 
+async function conTimeout(promessa, millisecondi, etichetta) {
+  let timer;
+  try {
+    return await Promise.race([
+      promessa,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${etichetta}_TIMEOUT`)), millisecondi);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function generaPianoScopertaConIA({
   titolo,
   artista,
@@ -38,10 +63,10 @@ export async function generaPianoScopertaConIA({
   }
 
   const esclusioniStrategie = strategieGiaUsate
-    .slice(-100)
+    .slice(-MASSIMO_STRATEGIE_CONTESTO)
     .map(s => ({ provider: s.provider, query: s.query }));
   const esclusioniCandidati = candidatiGiaNoti
-    .slice(0, 200)
+    .slice(0, MASSIMO_CANDIDATI_CONTESTO)
     .map(c => ({ titolo: c.titolo, interprete: c.interprete, anno: c.anno }));
 
   const messaggi = [
@@ -49,9 +74,10 @@ export async function generaPianoScopertaConIA({
       role: 'system',
       content: [
         'Sei il ricercatore musicale di Cover Lab AI.',
-        'Il tuo compito non e certificare: devi proporre quante piu piste plausibili possibili per trovare cover, adattamenti e versioni della STESSA composizione.',
+        'Il tuo compito non e certificare: devi proporre piste plausibili per trovare cover, adattamenti e versioni della STESSA composizione.',
         'Cerca mentalmente anche versioni in altre lingue, titoli tradotti o completamente differenti, adattamenti locali, artisti internazionali, versioni storiche e recenti.',
-        'Non fissare un numero totale massimo: questa e una singola tornata e altre tornate potranno continuare.',
+        `In QUESTA singola tornata restituisci al massimo ${MASSIMO_STRATEGIE_TORNATA} strategie e ${MASSIMO_CANDIDATI_TORNATA} candidati, scegliendo le piste nuove a maggior valore.`,
+        'NON esiste un limite complessivo: altre tornate continueranno a cercare e ad ampliare il catalogo.',
         'Non ripetere strategie o candidati gia forniti.',
         'Per ogni query indica il provider preferito: youtube, web oppure cataloghi.',
         'I candidati sono IPOTESI e verranno verificati dopo; se un dato non e ragionevolmente noto lascialo nullo invece di inventarlo.',
@@ -73,12 +99,16 @@ export async function generaPianoScopertaConIA({
 
   let raw;
   try {
-    raw = await env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
-      messages: messaggi,
-      response_format: { type: 'json_object' },
-      temperature: 0.35,
-      max_completion_tokens: 3200
-    });
+    raw = await conTimeout(
+      env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
+        messages: messaggi,
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_completion_tokens: 1200
+      }),
+      TIMEOUT_PIANO_MS,
+      'PIANO_SCOPERTA'
+    );
   } catch (e) {
     return {
       disponibile: true,
@@ -91,6 +121,7 @@ export async function generaPianoScopertaConIA({
 
   const dati = leggiJson(raw) || {};
   const strategie = (Array.isArray(dati.strategie) ? dati.strategie : [])
+    .slice(0, MASSIMO_STRATEGIE_TORNATA)
     .map(s => {
       const provider = testo(s?.provider, 30).toLowerCase();
       const query = testo(s?.query, 300);
@@ -106,6 +137,7 @@ export async function generaPianoScopertaConIA({
     .filter(Boolean);
 
   const candidati = (Array.isArray(dati.candidati) ? dati.candidati : [])
+    .slice(0, MASSIMO_CANDIDATI_TORNATA)
     .map(c => {
       const titoloCandidato = testo(c?.titolo, 250);
       if (!titoloCandidato) return null;
@@ -133,7 +165,7 @@ export async function generaPianoScopertaConIA({
 export async function interpretaRisultatiSorgenteConIA(originale, elementi = [], env) {
   if (!env?.AI?.run || !elementi.length) return [];
 
-  const input = elementi.slice(0, 50).map((e, indice) => ({
+  const input = elementi.slice(0, MASSIMO_RISULTATI_SORGENTE_TORNATA).map((e, indice) => ({
     indice,
     titolo: e.titolo,
     descrizione: e.descrizione,
@@ -159,12 +191,16 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
   ];
 
   try {
-    const raw = await env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
-      messages: messaggi,
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-      max_completion_tokens: 2600
-    });
+    const raw = await conTimeout(
+      env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
+        messages: messaggi,
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_completion_tokens: 1400
+      }),
+      TIMEOUT_FILTRO_MS,
+      'FILTRO_SORGENTE'
+    );
     const dati = leggiJson(raw) || {};
     return (Array.isArray(dati.risultati) ? dati.risultati : [])
       .filter(r => r?.correlato === true)
@@ -179,7 +215,7 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
         affidabilita: numero(r.affidabilita ?? 25, 0, 85),
         motivo: testo(r.motivo, 300)
       }))
-      .filter(r => Number.isInteger(r.indice) && r.indice >= 0 && r.indice < elementi.length && r.titolo);
+      .filter(r => Number.isInteger(r.indice) && r.indice >= 0 && r.indice < input.length && r.titolo);
   } catch {
     return [];
   }

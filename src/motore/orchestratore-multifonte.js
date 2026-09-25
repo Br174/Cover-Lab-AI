@@ -1,9 +1,9 @@
 import { generaPianoScopertaConIA, interpretaRisultatiSorgenteConIA } from '../fonti/ia-scoperta.js';
-import { cercaSuYouTube, statoProviderYouTube } from '../fonti/youtube.js';
-import { cercaNelCatalogoApple, statoProviderApple } from '../fonti/apple-search.js';
+import { providerScoperta } from '../fonti/provider-registry.js';
 import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
 import { riapriScopertaSeScaduta } from '../dati/freschezza-scoperta.js';
 import { verificaCandidatiMultifonte } from './verifica-candidati.js';
+import { eseguiRicercaProvider } from './source-router.js';
 import {
   chiaveComposizione,
   assicuraStatoScoperta,
@@ -24,12 +24,6 @@ function intero(valore, ripiego, massimo = 50) {
   const n = Number(valore);
   if (!Number.isFinite(n) || n <= 0) return ripiego;
   return Math.min(massimo, Math.floor(n));
-}
-
-function annoDaData(valore) {
-  const testo = String(valore || '');
-  const match = testo.match(/^(\d{4})/);
-  return match ? Number(match[1]) : null;
 }
 
 async function generaNuovePiste(originale, env, db, chiave) {
@@ -65,131 +59,116 @@ async function generaNuovePiste(originale, env, db, chiave) {
   return { stato: 'ok', strategieNuove, candidatiNuovi, esaurita: piano.esaurita === true };
 }
 
-async function processaYouTube(originale, env, db, chiave, massimoStrategie) {
-  const statoProvider = statoProviderYouTube(env);
-  const strategie = await prossimeStrategieProvider(db, chiave, 'youtube', massimoStrategie);
-  if (!strategie.length) {
-    return { provider: 'youtube', stato: statoProvider.stato, strategieElaborate: 0, candidati: 0, fonti: 0 };
+async function prossimeStrategiePerProvider(db, chiave, provider, limite) {
+  const alias = [...new Set([provider.id, ...(provider.aliasStrategia || [])])];
+  const tutte = [];
+  for (const nome of alias) {
+    const trovate = await prossimeStrategieProvider(db, chiave, nome, limite);
+    tutte.push(...trovate);
   }
+  const uniche = new Map();
+  for (const strategia of tutte) {
+    if (!uniche.has(strategia.id)) uniche.set(strategia.id, strategia);
+  }
+  return [...uniche.values()]
+    .sort((a, b) => Number(b.priorita || 0) - Number(a.priorita || 0))
+    .slice(0, limite);
+}
 
-  if (!statoProvider.disponibile) {
-    for (const strategia of strategie) {
-      await aggiornaStrategia(db, strategia.id, {
-        stato: 'attesa_provider', cursore: strategia.cursore || null,
-        candidatiAggiunti: 0, errore: null, incrementaPagina: false
-      });
-    }
+function statoStrategiaDopoErrore(esito) {
+  const codice = Number(esito?.codiceErrore);
+  if (esito?.stato === 'timeout' || [408, 429, 500, 502, 503, 504].includes(codice)) return 'continua';
+  if (esito?.stato === 'sospeso_circuit_breaker' || esito?.saltato) return 'attesa_provider';
+  return 'errore';
+}
+
+async function processaProviderScoperta(originale, env, db, chiave, provider, massimoStrategie, configurazione) {
+  const strategie = await prossimeStrategiePerProvider(db, chiave, provider, massimoStrategie);
+  const statoDichiarato = provider.stato?.() || { disponibile: true, stato: 'configurato' };
+  if (!strategie.length) {
     return {
-      provider: 'youtube', stato: 'chiave_da_configurare', strategieElaborate: 0,
-      strategieInAttesa: strategie.length, candidati: 0, fonti: 0
+      provider: provider.id,
+      stato: statoDichiarato.stato || 'nessuna_strategia',
+      strategieElaborate: 0,
+      candidati: 0,
+      fonti: 0
     };
   }
 
   let strategieElaborate = 0;
   let candidatiSalvati = 0;
   let fontiSalvate = 0;
-  for (const strategia of strategie) {
-    try {
-      const pagina = await cercaSuYouTube({
-        query: strategia.query, lingua: strategia.lingua, paese: strategia.paese,
-        pageToken: strategia.cursore || null, maxResults: 50
-      }, env);
-      const interpretati = await interpretaRisultatiSorgenteConIA(originale, pagina.elementi, env);
-      for (const candidato of interpretati) {
-        const elemento = pagina.elementi[candidato.indice];
-        if (!elemento) continue;
-        const esisteva = await esisteCandidatoScoperta(db, chiave, candidato);
-        const candidatoId = await salvaCandidatoScoperta(db, chiave, candidato, 'youtube');
-        if (!candidatoId) continue;
-        if (!esisteva) candidatiSalvati += 1;
-        await salvaFonteCandidato(db, candidatoId, {
-          fonte: 'youtube', idEsterno: elemento.idEsterno, indirizzo: elemento.indirizzo,
-          titoloFonte: elemento.titolo, descrizione: elemento.descrizione,
-          dataPubblicazione: elemento.dataPubblicazione
-        });
-        fontiSalvate += 1;
-      }
-      await aggiornaStrategia(db, strategia.id, {
-        stato: pagina.prossimoCursore ? 'continua' : 'esaurita',
-        cursore: pagina.prossimoCursore || null, candidatiAggiunti: interpretati.length,
-        errore: null, incrementaPagina: true
-      });
-      strategieElaborate += 1;
-    } catch (e) {
-      const transitorio = [429, 500, 502, 503, 504].includes(Number(e?.status));
-      await aggiornaStrategia(db, strategia.id, {
-        stato: transitorio ? 'continua' : 'errore', cursore: strategia.cursore || null,
-        candidatiAggiunti: 0, errore: String(e?.message || 'Errore YouTube non specificato').slice(0, 1000),
-        incrementaPagina: false
-      });
-    }
-  }
-  await aggiornaStatisticheScoperta(db, chiave, 'youtube');
-  return { provider: 'youtube', stato: 'ok', strategieElaborate, candidati: candidatiSalvati, fonti: fontiSalvate };
-}
+  let strategieInAttesa = 0;
+  let ultimoStato = statoDichiarato.stato || 'ok';
 
-async function processaCataloghiApple(originale, env, db, chiave, massimoStrategie, fetchAppleFn = fetch) {
-  const statoProvider = statoProviderApple();
-  const strategie = await prossimeStrategieProvider(db, chiave, 'cataloghi', Math.min(2, massimoStrategie));
-  if (!strategie.length) {
-    return { provider: 'apple_catalogo', stato: statoProvider.stato, strategieElaborate: 0, candidati: 0, fonti: 0 };
-  }
-
-  let strategieElaborate = 0;
-  let candidatiSalvati = 0;
-  let fontiSalvate = 0;
   for (const strategia of strategie) {
-    try {
-      const pagina = await cercaNelCatalogoApple({
+    const pagina = await eseguiRicercaProvider({
+      db,
+      provider,
+      richiesta: {
         query: strategia.query,
-        paeseRicerca: strategia.paese || originale.paese || 'IT',
+        lingua: strategia.lingua || originale.lingua || null,
+        paese: strategia.paese || originale.paese || null,
+        cursore: strategia.cursore || null,
         limite: 50
-      }, fetchAppleFn);
-      const interpretati = await interpretaRisultatiSorgenteConIA(originale, pagina.elementi, env);
-      for (const candidato of interpretati) {
-        const elemento = pagina.elementi[candidato.indice];
-        if (!elemento) continue;
-        const candidatoNormalizzato = {
-          ...candidato,
-          interprete: candidato.interprete || elemento.interprete || null,
-          anno: candidato.anno || annoDaData(elemento.dataPubblicazione),
-          paese: candidato.paese || elemento.paese || null
-        };
-        const esisteva = await esisteCandidatoScoperta(db, chiave, candidatoNormalizzato);
-        const candidatoId = await salvaCandidatoScoperta(
-          db,
-          chiave,
-          candidatoNormalizzato,
-          'apple_catalogo'
-        );
-        if (!candidatoId) continue;
-        if (!esisteva) candidatiSalvati += 1;
-        await salvaFonteCandidato(db, candidatoId, {
-          fonte: 'apple_catalogo',
-          idEsterno: elemento.idEsterno,
-          indirizzo: elemento.indirizzo,
-          titoloFonte: `${elemento.interprete} — ${elemento.titolo}`,
-          descrizione: elemento.descrizione,
-          dataPubblicazione: elemento.dataPubblicazione
-        });
-        fontiSalvate += 1;
-      }
+      },
+      configurazione
+    });
+
+    ultimoStato = pagina.stato || ultimoStato;
+    if (pagina.stato !== 'ok' && pagina.stato !== 'configurato') {
+      const statoStrategia = statoStrategiaDopoErrore(pagina);
       await aggiornaStrategia(db, strategia.id, {
-        stato: 'esaurita', cursore: null, candidatiAggiunti: interpretati.length,
-        errore: null, incrementaPagina: true
-      });
-      strategieElaborate += 1;
-    } catch (e) {
-      const transitorio = [429, 500, 502, 503, 504].includes(Number(e?.status));
-      await aggiornaStrategia(db, strategia.id, {
-        stato: transitorio ? 'continua' : 'errore', cursore: null,
-        candidatiAggiunti: 0, errore: String(e?.message || 'Errore Apple Search').slice(0, 1000),
+        stato: statoStrategia,
+        cursore: strategia.cursore || null,
+        candidatiAggiunti: 0,
+        errore: pagina.errore || null,
         incrementaPagina: false
       });
+      if (statoStrategia === 'attesa_provider') strategieInAttesa += 1;
+      continue;
     }
+
+    const elementi = Array.isArray(pagina.elementi) ? pagina.elementi : [];
+    const interpretati = await interpretaRisultatiSorgenteConIA(originale, elementi, env);
+    for (const candidato of interpretati) {
+      const elemento = elementi[candidato.indice];
+      if (!elemento) continue;
+      const candidatoNormalizzato = typeof provider.preparaCandidato === 'function'
+        ? provider.preparaCandidato(candidato, elemento)
+        : { ...candidato };
+      const esisteva = await esisteCandidatoScoperta(db, chiave, candidatoNormalizzato);
+      const candidatoId = await salvaCandidatoScoperta(db, chiave, candidatoNormalizzato, provider.id);
+      if (!candidatoId) continue;
+      if (!esisteva) candidatiSalvati += 1;
+      const fonte = typeof provider.creaFonte === 'function'
+        ? provider.creaFonte(elemento, candidatoNormalizzato)
+        : null;
+      if (fonte) {
+        await salvaFonteCandidato(db, candidatoId, fonte);
+        fontiSalvate += 1;
+      }
+    }
+
+    await aggiornaStrategia(db, strategia.id, {
+      stato: pagina.prossimoCursore ? 'continua' : 'esaurita',
+      cursore: pagina.prossimoCursore || null,
+      candidatiAggiunti: interpretati.length,
+      errore: null,
+      incrementaPagina: true
+    });
+    strategieElaborate += 1;
   }
-  await aggiornaStatisticheScoperta(db, chiave, 'apple_catalogo');
-  return { provider: 'apple_catalogo', stato: 'ok', strategieElaborate, candidati: candidatiSalvati, fonti: fontiSalvate };
+
+  await aggiornaStatisticheScoperta(db, chiave, provider.id);
+  return {
+    provider: provider.id,
+    stato: strategieElaborate > 0 ? 'ok' : ultimoStato,
+    strategieElaborate,
+    strategieInAttesa,
+    candidati: candidatiSalvati,
+    fonti: fontiSalvate
+  };
 }
 
 export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
@@ -221,32 +200,64 @@ export async function eseguiScopertaMultifonte(originale, env, opzioni = {}) {
     db, chiave, intero(configurazione.multifonte_ricontrollo_ore, 168, 24 * 365)
   );
   const piano = await generaNuovePiste({
-    titolo, artista, compositore: originale.compositore || null,
-    anno: originale.anno || null, lingua: originale.lingua || null, paese: originale.paese || null
+    titolo,
+    artista,
+    compositore: originale.compositore || null,
+    anno: originale.anno || null,
+    lingua: originale.lingua || null,
+    paese: originale.paese || null
   }, env, db, chiave);
 
-  const massimoStrategie = intero(opzioni.massimoStrategie || configurazione.strategie_provider_per_giro, 2, 10);
-  const [youtube, apple] = await Promise.all([
-    processaYouTube(originale, env, db, chiave, massimoStrategie),
-    processaCataloghiApple(originale, env, db, chiave, massimoStrategie, opzioni.fetchAppleFn || fetch)
-  ]);
+  const massimoStrategie = intero(
+    opzioni.massimoStrategie || configurazione.strategie_provider_per_giro,
+    2,
+    10
+  );
+  const providers = providerScoperta(env, {
+    fetchAppleFn: opzioni.fetchAppleFn,
+    fetchYouTubeFn: opzioni.fetchYouTubeFn
+  });
+  const esitiProvider = await Promise.all(
+    providers.map(provider => processaProviderScoperta(
+      originale,
+      env,
+      db,
+      chiave,
+      provider,
+      massimoStrategie,
+      configurazione
+    ))
+  );
+  const provider = Object.fromEntries(esitiProvider.map(esito => [esito.provider, esito]));
 
   let verifica = { stato: 'non_eseguita', esaminati: 0, promossi: 0 };
   try {
     verifica = await verificaCandidatiMultifonte({ titolo, artista }, env, {
-      limite: intero(opzioni.massimoCandidatiVerifica || configurazione.candidati_verifica_per_giro, 2, 5),
+      limite: intero(
+        opzioni.massimoCandidatiVerifica || configurazione.candidati_verifica_per_giro,
+        2,
+        5
+      ),
       soglia: Number(configurazione.soglia_promozione_candidato || 90),
       fetchFn: opzioni.fetchFn
     });
   } catch (e) {
-    verifica = { stato: 'errore_non_bloccante', esaminati: 0, promossi: 0,
-      errore: String(e?.message || 'Errore verifica candidati').slice(0, 500) };
+    verifica = {
+      stato: 'errore_non_bloccante',
+      esaminati: 0,
+      promossi: 0,
+      errore: String(e?.message || 'Errore verifica candidati').slice(0, 500)
+    };
   }
 
   const statoFinale = await leggiStatoScoperta(db, chiave);
   return {
-    stato: 'ok', chiaveComposizione: chiave, freschezza, piano,
-    provider: { youtube, apple }, verifica,
+    stato: 'ok',
+    chiaveComposizione: chiave,
+    freschezza,
+    piano,
+    provider,
+    verifica,
     candidatiTotali: Number(statoFinale?.candidati_totali || 0),
     fontiTotali: Number(statoFinale?.fonti_totali || 0),
     giriIA: Number(statoFinale?.giri_ia || 0),

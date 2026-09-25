@@ -32,3 +32,18 @@ jobs:
         run: npx wrangler deploy --dry-run
         env:
           WRANGLER_SEND_METRICS: 'false'
+
+      - name: Inizializza D1 tramite anteprima LAB
+        if: github.event_name == 'push' && github.ref == 'refs/heads/lab/uab-onboarding-01'
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev/__inizializza-d1-cover-lab-ai"
+          curl --fail --silent --show-error --retry 18 --retry-delay 5 --retry-all-errors "$URL" -o /tmp/d1-risultato.json
+          cat /tmp/d1-risultato.json
+          grep -q '"stato": "ok"' /tmp/d1-risultato.json
+          grep -q '"composizioni"' /tmp/d1-risultato.json
+          grep -q '"versioni"' /tmp/d1-risultato.json
+          grep -q '"fonti_verifica"' /tmp/d1-risultato.json
+          grep -q '"ricerche"' /tmp/d1-risultato.json
+          grep -q '"opere_collegate"' /tmp/d1-risultato.json

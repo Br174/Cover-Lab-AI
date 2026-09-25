@@ -1,4 +1,5 @@
 import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
+import { inizializzaDatabase } from './dati/inizializza-db.js';
 
 const INTESTAZIONI = {
   'content-type': 'application/json; charset=utf-8',
@@ -45,6 +46,15 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/stato') {
       return json({ stato: 'operativo', versione: env.VERSIONE_MOTORE || '0.2.0' });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/__inizializza-d1-cover-lab-ai') {
+      try {
+        return json(await inizializzaDatabase(env.DB));
+      } catch (e) {
+        console.error(e);
+        return errore('Inizializzazione database non completata.', 500, e?.message || 'Errore non specificato');
+      }
     }
 
     if (request.method === 'POST' && url.pathname === '/api/cerca-ancora') {

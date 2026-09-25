@@ -33,8 +33,6 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
   );
   const base = limita(candidato?.affidabilita_proposta || candidato?.affidabilitaProposta || 0);
 
-  // L'AI da sola non può promuovere nulla. Due o più famiglie di fonti
-  // indipendenti possono invece costituire una verifica multi-fonte.
   if (providerIndipendenti.size >= 2 && base >= 70) {
     const affidabilita = Math.min(96, base + 15 + Math.min(6, (providerIndipendenti.size - 2) * 3));
     if (affidabilita >= soglia) {
@@ -72,9 +70,24 @@ function versioneDaCandidato(candidato, affidabilita) {
   };
 }
 
+async function migrazioneVerificaDisponibile(db) {
+  try {
+    await db.prepare('SELECT affidabilita_verificata, versione_id FROM candidati_scoperta LIMIT 1').all();
+    await db.prepare('SELECT id FROM crediti_versione LIMIT 1').all();
+    return true;
+  } catch (e) {
+    const messaggio = String(e?.message || '');
+    if (messaggio.includes('no such column') || messaggio.includes('no such table')) return false;
+    throw e;
+  }
+}
+
 export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzioni = {}) {
   const db = env?.DB;
   if (!db || !titolo || !artista) return { stato: 'dati_insufficienti', esaminati: 0, promossi: 0 };
+  if (!(await migrazioneVerificaDisponibile(db))) {
+    return { stato: 'migrazione_verifica_non_applicata', esaminati: 0, promossi: 0 };
+  }
 
   const composizione = await trovaComposizione(db, titolo, artista);
   if (!composizione) return { stato: 'composizione_non_archiviata', esaminati: 0, promossi: 0 };

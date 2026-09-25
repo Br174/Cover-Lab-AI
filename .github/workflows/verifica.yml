@@ -20,3 +20,7 @@ jobs:
         run: npm install
       - name: Esegui controlli automatici
         run: npm test
+      - name: Valida pacchetto Cloudflare Worker
+        run: npx wrangler deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: 'false'

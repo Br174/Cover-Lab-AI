@@ -20,7 +20,7 @@ jobs:
 
           echo "Attendo LAB 0.4.1..."
           PRONTO=0
-          for TENTATIVO in $(seq 1 45); do
+          for TENTATIVO in $(seq 1 60); do
             CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
             if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.4.1"' /tmp/root.json; then
               PRONTO=1

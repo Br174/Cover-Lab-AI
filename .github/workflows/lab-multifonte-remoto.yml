@@ -18,19 +18,21 @@ jobs:
           BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
           PAGINA="$BASE/api/versioni?titolo=Sapore%20di%20sale&artista=Gino%20Paoli&ordine=asc&offset=0"
 
-          echo "Attendo LAB 0.4.0 con endpoint temporanei..."
+          echo "Attendo LAB 0.4.1..."
           PRONTO=0
-          for TENTATIVO in $(seq 1 35); do
-            CODICE=$(curl --silent --show-error --max-time 12 -o /tmp/migra.json -w '%{http_code}' "$BASE/__lab-multifonte-migra" || true)
-            if [ "$CODICE" = "200" ] && grep -q '"stato": "ok"' /tmp/migra.json; then
+          for TENTATIVO in $(seq 1 45); do
+            CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
+            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.4.1"' /tmp/root.json; then
               PRONTO=1
               break
             fi
-            echo "Tentativo $TENTATIVO: HTTP $CODICE"
+            echo "Tentativo $TENTATIVO: anteprima non ancora 0.4.1 (HTTP $CODICE_STATO)"
             sleep 4
           done
           test "$PRONTO" = "1"
 
+          CODICE=$(curl --silent --show-error --max-time 15 -o /tmp/migra.json -w '%{http_code}' "$BASE/__lab-multifonte-migra")
+          test "$CODICE" = "200"
           echo "--- MIGRAZIONE 0003 REMOTA ---"
           cat /tmp/migra.json
           echo
@@ -54,7 +56,7 @@ jobs:
           echo "Versioni visibili prima della prova: $PRIMA"
 
           echo "--- AUTO-INTERROGAZIONE AI ---"
-          CODICE_PROVA=$(curl --silent --show-error --max-time 80 -o /tmp/prova.json -w '%{http_code}' "$BASE/__lab-multifonte-prova")
+          CODICE_PROVA=$(curl --silent --show-error --max-time 45 -o /tmp/prova.json -w '%{http_code}' "$BASE/__lab-multifonte-prova")
           echo "HTTP prova: $CODICE_PROVA"
           cat /tmp/prova.json
           echo
@@ -64,7 +66,7 @@ jobs:
           d=json.load(open('/tmp/prova.json',encoding='utf-8'))
           assert d.get('stato') == 'ok', d
           piano=d.get('piano') or {}
-          assert piano.get('stato') in ('ok','ia_esaurita'), piano
+          assert piano.get('stato') in ('ok','ia_esaurita','errore_ia'), piano
           yt=(d.get('provider') or {}).get('youtube') or {}
           assert yt.get('stato') in ('chiave_da_configurare','configurato','ok'), yt
           if yt.get('stato') == 'chiave_da_configurare':

@@ -132,6 +132,12 @@ export const PIANO_EVOLUZIONE = Object.freeze([
     stato: STATO_PIANO.IMPLEMENTATA,
     obiettivo: 'Cover Lab usa le piattaforme per dati e prove, non riproduce o scarica media. Se trova direttamente una cover su YouTube passa anche il riferimento gia trovato a Music Lab; non cerca apposta YouTube per cover scoperte altrove.',
     impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'interfaccia_diagnostica_metadata',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'L APK Cover Lab deve consentire una ricerca manuale di prova e mostrare originale e cover con metadati, senza riprodurre audio o video. L uso normale resta l integrazione con Music Lab.',
+    impatto: ['velocita_dei_risultati', 'quantita_dei_risultati', 'affidabilita_reale_delle_cover']
   }
 ]);
 

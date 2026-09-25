@@ -1,5 +1,6 @@
 import { cercaSuYouTube, statoProviderYouTube } from './youtube.js';
 import { cercaNelCatalogoApple, statoProviderApple } from './apple-search.js';
+import { cercaSuInternetArchive, statoProviderInternetArchive } from './internet-archive.js';
 
 export const CAPACITA_PROVIDER = Object.freeze({
   SCOPERTA: 'scoperta',
@@ -116,11 +117,52 @@ function descriptorApple(env, opzioni = {}) {
   };
 }
 
+function descriptorInternetArchive(env, opzioni = {}) {
+  return {
+    id: 'internet_archive',
+    nome: 'Internet Archive',
+    priorita: 70,
+    affidabilitaBase: 55,
+    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    aliasStrategia: ['archivi', 'internet_archive'],
+    paginaUnica: false,
+    stato() {
+      return statoProviderInternetArchive();
+    },
+    async cerca({ query, cursore = null, limite = 50 } = {}, controllo = {}) {
+      return cercaSuInternetArchive({
+        query,
+        pagina: Number(cursore || 1),
+        limite
+      }, opzioni.fetchInternetArchiveFn || fetch, controllo.signal || null);
+    },
+    preparaCandidato(candidato, elemento) {
+      return {
+        ...candidato,
+        interprete: candidato.interprete || elemento?.interprete || null,
+        anno: candidato.anno || annoDaData(elemento?.dataPubblicazione),
+        lingua: candidato.lingua || elemento?.lingua || null
+      };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'internet_archive',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: [elemento.interprete, elemento.titolo].filter(Boolean).join(' — '),
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
+      };
+    }
+  };
+}
+
 export function creaRegistroProvider(env = {}, opzioni = {}) {
   const providers = [
     descriptorMusicBrainz(env, opzioni),
     descriptorYouTube(env, opzioni),
-    descriptorApple(env, opzioni)
+    descriptorApple(env, opzioni),
+    descriptorInternetArchive(env, opzioni)
   ];
   return new Map(providers.map(provider => [provider.id, provider]));
 }

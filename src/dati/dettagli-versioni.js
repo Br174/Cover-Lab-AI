@@ -1,4 +1,5 @@
 import { applicaPolicyMusicLab } from '../motore/policy-fonti-media.js';
+import { leggiConflittiVersioni } from './conflitti-versione.js';
 
 function raggruppa(righe = []) {
   const mappa = new Map();
@@ -10,10 +11,26 @@ function raggruppa(righe = []) {
   return mappa;
 }
 
+function completaStatoQualita(versione, conflitti = []) {
+  const aperti = conflitti.filter(c => c.stato === 'aperto');
+  return {
+    ...versione,
+    confidenza: Number(versione.affidabilita || 0),
+    statoVerifica: versione.statoVerifica || 'da_verificare',
+    haConflitti: aperti.length > 0,
+    conflittiAperti: aperti.length,
+    conflitti
+  };
+}
+
 export async function aggiungiFontiECrediti(db, versioni = []) {
-  if (!db || !versioni.length) return versioni.map(applicaPolicyMusicLab);
+  if (!db || !versioni.length) {
+    return versioni.map(v => applicaPolicyMusicLab(completaStatoQualita(v, [])));
+  }
   const ids = versioni.map(v => v.id).filter(Boolean);
-  if (!ids.length) return versioni.map(applicaPolicyMusicLab);
+  if (!ids.length) {
+    return versioni.map(v => applicaPolicyMusicLab(completaStatoQualita(v, [])));
+  }
   const segnaposto = ids.map((_, i) => `?${i + 1}`).join(',');
 
   let fonti = [];
@@ -42,11 +59,14 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
     crediti = [];
   }
 
+  const conflitti = await leggiConflittiVersioni(db, ids);
   const fontiPerVersione = raggruppa(fonti);
   const creditiPerVersione = raggruppa(crediti);
-  return versioni.map(versione => applicaPolicyMusicLab({
+  const conflittiPerVersione = raggruppa(conflitti);
+
+  return versioni.map(versione => applicaPolicyMusicLab(completaStatoQualita({
     ...versione,
     fonti: (fontiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto),
     crediti: (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
-  }));
+  }, (conflittiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto))));
 }

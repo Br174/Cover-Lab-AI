@@ -1,4 +1,5 @@
 import { creaChiaveRicerca } from '../motore/normalizzazione.js';
+import { aggiungiFontiECrediti } from './dettagli-versioni.js';
 
 function interoPositivo(valore, ripiego, massimo = 1000) {
   const n = Number(valore);
@@ -185,7 +186,8 @@ export async function paginaVersioniArchiviate(db, {
   `).bind(composizione.id, quantita, posizione).all();
 
   const totale = Number(conteggio?.totale || 0);
-  const versioni = risultato.results || [];
+  const versioniBase = risultato.results || [];
+  const versioni = await aggiungiFontiECrediti(db, versioniBase);
   const prossimoOffset = posizione + versioni.length < totale
     ? posizione + versioni.length
     : null;

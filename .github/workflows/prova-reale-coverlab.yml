@@ -11,19 +11,20 @@ jobs:
   prova:
     runs-on: ubuntu-latest
     steps:
-      - name: Attende anteprima 0.2.1 e prova Sapore di sale
+      - name: Verifica LAB 0.3.0 e paginazione Music Lab
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
 
-          echo "Attendo che Cloudflare esponga la LAB 0.2.1..."
+          echo "Attendo la LAB 0.3.0..."
           PRONTA=0
-          for TENTATIVO in $(seq 1 30); do
+          for TENTATIVO in $(seq 1 36); do
             CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/stato.json -w '%{http_code}' "$BASE/" || true)
-            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.2.1"' /tmp/stato.json; then
-              echo "Anteprima 0.2.1 pronta al tentativo $TENTATIVO."
+            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.3.0"' /tmp/stato.json; then
+              echo "Anteprima 0.3.0 pronta al tentativo $TENTATIVO."
               cat /tmp/stato.json
+              echo
               PRONTA=1
               break
             fi
@@ -34,17 +35,16 @@ jobs:
 
           URL="$BASE/api/ricerca"
           INIZIO=$(date +%s%3N)
-          CODICE=$(curl --silent --show-error --max-time 35 \
+          CODICE=$(curl --silent --show-error --max-time 45 \
             -X POST "$URL" \
             -H 'content-type: application/json' \
-            --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc"}' \
+            --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc","approfondisci":true}' \
             -o /tmp/risultato.json \
             -w '%{http_code}')
           FINE=$(date +%s%3N)
           DURATA=$((FINE-INIZIO))
-          echo "Codice HTTP prima ricerca: $CODICE"
-          echo "Durata totale prima ricerca ms: $DURATA"
-          echo "Risposta prima ricerca:"
+          echo "Codice HTTP ricerca: $CODICE"
+          echo "Durata totale ms: $DURATA"
           cat /tmp/risultato.json
           echo
           test "$CODICE" = "200"
@@ -52,45 +52,37 @@ jobs:
           python - <<'PY'
           import json
           d=json.load(open('/tmp/risultato.json',encoding='utf-8'))
-          print('--- RIASSUNTO PRIMA RICERCA ---')
+          print('--- RIASSUNTO RICERCA ---')
           print('stato:', d.get('stato'))
           print('provenienza:', d.get('provenienza'))
           print('versioniIndividuate:', d.get('versioniIndividuate'))
           print('durataMs motore:', d.get('durataMs'))
           c=d.get('composizione') or {}
-          print('opera:', c.get('idMusicBrainz'), c.get('titolo'), c.get('anno'), c.get('lingua'), c.get('metodoIndividuazione'))
-          versioni=d.get('versioni') or []
-          print('numero elementi:', len(versioni))
-          for v in versioni[:15]:
-              print('-', v.get('anno'), v.get('interprete'), v.get('titolo'), v.get('tipo'), v.get('lingua'), v.get('affidabilita'))
+          print('opera:', c.get('idMusicBrainz'), c.get('titolo'), c.get('anno'), c.get('lingua'))
           assert d.get('stato') == 'pronto', d
           assert c.get('idMusicBrainz') == 'e94fdfad-2d84-3cab-9152-3746a4c98162', c
           assert int(d.get('versioniIndividuate') or 0) > 0, d
           PY
 
-          INIZIO2=$(date +%s%3N)
-          CODICE2=$(curl --silent --show-error --max-time 15 \
-            -X POST "$URL" \
-            -H 'content-type: application/json' \
-            --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc"}' \
-            -o /tmp/risultato2.json \
-            -w '%{http_code}')
-          FINE2=$(date +%s%3N)
-          DURATA2=$((FINE2-INIZIO2))
-          echo "Codice HTTP seconda ricerca: $CODICE2"
-          echo "Durata totale seconda ricerca ms: $DURATA2"
-          cat /tmp/risultato2.json
+          PAGINA="$BASE/api/versioni?titolo=Sapore%20di%20sale&artista=Gino%20Paoli&ordine=asc&offset=0"
+          CODICE_PAGINA=$(curl --silent --show-error --max-time 20 -o /tmp/pagina.json -w '%{http_code}' "$PAGINA")
+          echo "Codice HTTP pagina: $CODICE_PAGINA"
+          cat /tmp/pagina.json
           echo
-          test "$CODICE2" = "200"
+          test "$CODICE_PAGINA" = "200"
+
           python - <<'PY'
           import json
-          d=json.load(open('/tmp/risultato2.json',encoding='utf-8'))
-          print('--- RIASSUNTO SECONDA RICERCA ---')
+          d=json.load(open('/tmp/pagina.json',encoding='utf-8'))
+          print('--- RIASSUNTO PAGINA MUSIC LAB ---')
           print('stato:', d.get('stato'))
-          print('provenienza:', d.get('provenienza'))
-          print('versioniIndividuate:', d.get('versioniIndividuate'))
-          print('durataMs motore:', d.get('durataMs'))
+          print('totale:', d.get('totale'))
+          print('limite:', d.get('limite'))
+          print('prossimoOffset:', d.get('prossimoOffset'))
+          versioni=d.get('versioni') or []
+          print('elementi pagina:', len(versioni))
           assert d.get('stato') == 'pronto', d
-          assert d.get('provenienza') == 'memoria dei risultati', d
-          assert int(d.get('versioniIndividuate') or 0) > 0, d
+          assert d.get('limite') == 20, d
+          assert len(versioni) <= 20, len(versioni)
+          assert int(d.get('totale') or 0) >= len(versioni), d
           PY

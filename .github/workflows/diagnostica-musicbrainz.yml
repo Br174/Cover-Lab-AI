@@ -1,0 +1,71 @@
+name: Diagnostica temporanea MusicBrainz Sapore di sale
+
+on:
+  push:
+    branches:
+      - 'lab/uab-onboarding-01'
+    paths:
+      - '.github/workflows/diagnostica-musicbrainz.yml'
+
+jobs:
+  diagnostica:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroga MusicBrainz e mostra le relazioni opera
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, time, urllib.parse, urllib.request
+
+          BASE='https://musicbrainz.org/ws/2'
+          HEAD={'Accept':'application/json','User-Agent':'CoverLabAI-Diagnostica/0.2 (https://github.com/Br174/Cover-Lab-AI)'}
+
+          def get(path, params=None):
+              if params:
+                  path += ('&' if '?' in path else '?') + urllib.parse.urlencode(params)
+              url=BASE+path
+              req=urllib.request.Request(url, headers=HEAD)
+              print('\nGET', url)
+              with urllib.request.urlopen(req, timeout=25) as r:
+                  data=json.load(r)
+              time.sleep(1.1)
+              return data
+
+          queries = [
+              'recording:"Sapore di sale" AND artist:"Gino Paoli"',
+              'recording:"Sapore di sale" AND artist:Gino Paoli',
+              '"Sapore di sale" AND "Gino Paoli"',
+              'recording:"Sapore di sale"'
+          ]
+
+          seen=[]
+          for q in queries:
+              d=get('/recording/', {'query':q,'fmt':'json','limit':'10'})
+              print('\nQUERY:', q)
+              print('COUNT:', d.get('count'))
+              for i,r in enumerate(d.get('recordings',[])[:10],1):
+                  artists=''.join((x.get('name') or x.get('artist',{}).get('name') or '') for x in r.get('artist-credit',[]))
+                  print(f'{i}. score={r.get("score")} id={r.get("id")} title={r.get("title")!r} artist={artists!r}')
+                  if r.get('id') and r.get('id') not in seen:
+                      seen.append(r['id'])
+
+          print('\n=== DETTAGLIO PRIMI CANDIDATI UNICI ===')
+          for rid in seen[:10]:
+              d=get(f'/recording/{rid}', {'inc':'work-rels+artist-credits+releases','fmt':'json'})
+              artists=''.join((x.get('name') or x.get('artist',{}).get('name') or '') for x in d.get('artist-credit',[]))
+              print(f'\nRECORDING {rid} title={d.get("title")!r} artist={artists!r}')
+              rels=d.get('relations',[])
+              perf=[r for r in rels if r.get('type')=='performance' and r.get('work')]
+              print('performance relations:', len(perf))
+              for r in perf:
+                  w=r.get('work',{})
+                  print('  work=', w.get('id'), repr(w.get('title')), 'attributes=', r.get('attributes'), 'direction=', r.get('direction'))
+
+          print('\n=== RICERCA DIRETTA OPERE ===')
+          for q in ['work:"Sapore di sale"','work:"Sapore di sale" AND artist:"Gino Paoli"','"Sapore di sale"']:
+              d=get('/work/', {'query':q,'fmt':'json','limit':'10'})
+              print('\nWORK QUERY:', q, 'COUNT:', d.get('count'))
+              for i,w in enumerate(d.get('works',[])[:10],1):
+                  print(f'{i}. score={w.get("score")} id={w.get("id")} title={w.get("title")!r} type={w.get("type")!r} language={w.get("language")!r}')
+          PY

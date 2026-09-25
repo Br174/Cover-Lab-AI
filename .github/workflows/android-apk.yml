@@ -19,6 +19,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Configura Android SDK
+        uses: android-actions/setup-android@v3
       - name: Configura Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
         with:

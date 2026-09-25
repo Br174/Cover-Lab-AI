@@ -2,6 +2,7 @@ import { cercaVersioni, cercaAncoraVersioni } from './motore/motore.js';
 import { eseguiArchivioVivo } from './motore/archivio-vivo.js';
 import { eseguiScopertaMultifonte } from './motore/orchestratore-multifonte.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
+import { migraMultifonteLab, statoMultifonteLab } from './dati/lab-migra-multifonte.js';
 
 const INTESTAZIONI = {
   'content-type': 'application/json; charset=utf-8',
@@ -79,6 +80,38 @@ export default {
       });
     }
 
+    // Endpoint LAB temporanei: usati una sola volta per applicare/verificare 0003 sul D1 remoto.
+    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-migra') {
+      try {
+        return json(await migraMultifonteLab(env.DB));
+      } catch (e) {
+        return errore('Migrazione multi-fonte LAB non completata.', 500, e?.message || 'Errore non specificato');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-prova') {
+      try {
+        return json(await eseguiScopertaMultifonte({
+          titolo: 'Sapore di sale',
+          artista: 'Gino Paoli',
+          compositore: 'Gino Paoli',
+          anno: 1963,
+          lingua: 'ita',
+          paese: 'IT'
+        }, env, { massimoStrategie: 1 }));
+      } catch (e) {
+        return errore('Prova multi-fonte LAB non completata.', 500, e?.message || 'Errore non specificato');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/__lab-multifonte-stato') {
+      try {
+        return json(await statoMultifonteLab(env.DB, 'sapore di sale::gino paoli'));
+      } catch (e) {
+        return errore('Stato multi-fonte LAB non disponibile.', 500, e?.message || 'Errore non specificato');
+      }
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/versioni') {
       const titolo = String(url.searchParams.get('titolo') || '').trim();
       const artista = String(url.searchParams.get('artista') || '').trim();
@@ -152,8 +185,6 @@ export default {
           motivo: 'richiesta diretta Music Lab'
         }));
 
-        // La memoria rende la risposta immediata, ma non congela mai l'archivio:
-        // avvia in background sia il controllo strutturato sia nuove piste multi-fonte.
         if (!parametri.approfondisci && risultato?.provenienza === 'memoria dei risultati') {
           programma(ctx, cercaVersioni({ ...parametri, approfondisci: true }, env));
           programma(ctx, eseguiScopertaMultifonte(

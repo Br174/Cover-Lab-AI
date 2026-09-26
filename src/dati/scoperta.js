@@ -96,6 +96,7 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
   if (!db || !candidato?.titolo) return null;
   const chiaveDuplicato = chiaveCandidato(candidato);
   const esistente = await trovaCandidatoEsistente(db, chiave, candidato);
+  const confermaFonteAI = candidato?.coerenzaFonteAI === true;
 
   if (esistente?.id) {
     await db.prepare(`
@@ -103,8 +104,12 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
       SET anno=COALESCE(anno, ?2),
           lingua=COALESCE(lingua, ?3),
           paese=COALESCE(paese, ?4),
-          tipo_proposto=COALESCE(tipo_proposto, ?5),
+          tipo_proposto=CASE
+            WHEN ?7=1 AND ?5 IS NOT NULL THEN ?5
+            ELSE COALESCE(tipo_proposto, ?5)
+          END,
           affidabilita_proposta=MAX(affidabilita_proposta, ?6),
+          stato=CASE WHEN ?7=1 THEN 'fonte_confermata_ai' ELSE stato END,
           ultima_verifica=CURRENT_TIMESTAMP
       WHERE id=?1
     `).bind(
@@ -113,7 +118,8 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
       candidato.lingua || null,
       candidato.paese || null,
       candidato.tipo || candidato.tipoProposto || null,
-      limitaIntero(candidato.affidabilita ?? candidato.affidabilitaProposta ?? 0, 0, 100)
+      limitaIntero(candidato.affidabilita ?? candidato.affidabilitaProposta ?? 0, 0, 100),
+      confermaFonteAI ? 1 : 0
     ).run();
     return esistente.id;
   }
@@ -124,13 +130,14 @@ export async function salvaCandidatoScoperta(db, chiave, candidato, origine = 'i
       id, chiave_composizione, chiave_candidato, titolo, interprete,
       anno, lingua, paese, tipo_proposto, affidabilita_proposta,
       stato, prima_origine, ultima_verifica
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'da_verificare', ?11, CURRENT_TIMESTAMP)
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, CURRENT_TIMESTAMP)
   `).bind(
     id, chiave, chiaveDuplicato, candidato.titolo,
     candidato.interprete || null, candidato.anno || null,
     candidato.lingua || null, candidato.paese || null,
     candidato.tipo || candidato.tipoProposto || null,
     limitaIntero(candidato.affidabilita ?? candidato.affidabilitaProposta ?? 0, 0, 100),
+    confermaFonteAI ? 'fonte_confermata_ai' : 'da_verificare',
     origine
   ).run();
   return id;

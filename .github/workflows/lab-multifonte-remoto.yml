@@ -53,12 +53,16 @@ jobs:
 
           echo "--- PAGINA ARCHIVIO CLOUD ---"
           CODICE_HTML=$(curl --silent --show-error --max-time 20 -o /tmp/archivio.html -w '%{http_code}' "$BASE/archivio" || true)
+          echo "HTTP pagina Archivio: $CODICE_HTML"
           test "$CODICE_HTML" = "200"
           grep -q 'Archivio Cover Lab' /tmp/archivio.html
           grep -q 'Cerca titolo, artista, adattamento' /tmp/archivio.html
 
           echo "--- STATISTICHE ARCHIVIO ---"
           CODICE_STATS=$(curl --silent --show-error --max-time 20 -o /tmp/stats.json -w '%{http_code}' "$BASE/api/archivio/statistiche" || true)
+          echo "HTTP statistiche: $CODICE_STATS"
+          cat /tmp/stats.json || true
+          echo
           test "$CODICE_STATS" = "200"
           python - <<'PY'
           import json
@@ -72,6 +76,9 @@ jobs:
           echo "--- RICERCA ARCHIVIO MIRATA ---"
           CODICE_AC=$(curl --silent --show-error --max-time 20 -o /tmp/ac.json -w '%{http_code}' \
             "$BASE/api/archivio/cerca?q=nel%20blu%20dipinto%20di%20blu" || true)
+          echo "HTTP ricerca Archivio: $CODICE_AC"
+          cat /tmp/ac.json || true
+          echo
           test "$CODICE_AC" = "200"
           python - <<'PY'
           import json
@@ -87,6 +94,8 @@ jobs:
             -H 'Content-Type: application/json' \
             --data '{"query":"gino paoli sapore di sale","ordine":"asc"}' || true)
           echo "HTTP Gino Paoli: $CODICE_GINO"
+          cat /tmp/gino.json || true
+          echo
           test "$CODICE_GINO" = "200"
           python - <<'PY'
           import json
@@ -116,6 +125,9 @@ jobs:
           echo "--- DIAGNOSTICA MOTORE ---"
           CODICE_DIAG=$(curl --silent --show-error --max-time 30 -o /tmp/diag.json -w '%{http_code}' \
             "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli" || true)
+          echo "HTTP diagnostica: $CODICE_DIAG"
+          cat /tmp/diag.json || true
+          echo
           test "$CODICE_DIAG" = "200"
           python - <<'PY'
           import json

@@ -39,8 +39,13 @@ export async function salvaComposizione(db, composizione, titoloRichiesto, artis
       titolo_canonico=excluded.titolo_canonico,
       artista_originale=COALESCE(excluded.artista_originale, composizioni.artista_originale),
       compositore=COALESCE(excluded.compositore, composizioni.compositore),
-      anno_originale=COALESCE(excluded.anno_originale, composizioni.anno_originale),
+      anno_originale=CASE
+        WHEN excluded.anno_originale IS NULL THEN composizioni.anno_originale
+        WHEN composizioni.anno_originale IS NULL THEN excluded.anno_originale
+        ELSE MIN(composizioni.anno_originale, excluded.anno_originale)
+      END,
       lingua_originale=COALESCE(excluded.lingua_originale, composizioni.lingua_originale),
+      paese_origine=COALESCE(excluded.paese_origine, composizioni.paese_origine),
       id_musicbrainz=COALESCE(excluded.id_musicbrainz, composizioni.id_musicbrainz),
       data_ultima_verifica=CURRENT_TIMESTAMP
   `).bind(
@@ -130,7 +135,11 @@ export async function salvaVersioni(db, composizioneId, versioni, creditiComposi
       DO UPDATE SET
         titolo=excluded.titolo,
         interprete=excluded.interprete,
-        anno=COALESCE(excluded.anno, versioni.anno),
+        anno=CASE
+          WHEN excluded.anno IS NULL THEN versioni.anno
+          WHEN versioni.anno IS NULL THEN excluded.anno
+          ELSE MIN(versioni.anno, excluded.anno)
+        END,
         lingua=COALESCE(excluded.lingua, versioni.lingua),
         paese=COALESCE(excluded.paese, versioni.paese),
         tipo=excluded.tipo,

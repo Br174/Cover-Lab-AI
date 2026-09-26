@@ -133,8 +133,7 @@ function descriptorDeezer(env, opzioni = {}) {
         ...candidato,
         titolo: candidato.titolo || elemento?.titolo || null,
         interprete: candidato.interprete || elemento?.interprete || null,
-        anno: candidato.anno || annoDaData(elemento?.dataPubblicazione),
-        affidabilita: Math.max(Number(candidato.affidabilita || 0), 72)
+        anno: candidato.anno || annoDaData(elemento?.dataPubblicazione)
       };
     },
     creaFonte(elemento) {
@@ -217,10 +216,7 @@ function descriptorWebEditoriale(env, opzioni = {}) {
       return cercaSuWebEditoriale({ query, lingua, limite }, opzioni.fetchWebEditorialeFn || fetch, controllo.signal || null);
     },
     preparaCandidato(candidato) {
-      return {
-        ...candidato,
-        affidabilita: Math.max(Number(candidato.affidabilita || 0), 70)
-      };
+      return { ...candidato };
     },
     creaFonte(elemento) {
       return {

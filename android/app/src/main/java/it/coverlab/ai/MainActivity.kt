@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private var prossimoOffset: Int? = null
     private var titoloRisolto: String? = null
     private var artistaRisolto: String? = null
+    private var serialeRicerca: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,23 +118,28 @@ class MainActivity : Activity() {
             return
         }
 
+        val tokenRicerca = if (continuazione) serialeRicerca else ++serialeRicerca
+
         if (!continuazione) {
+            ultimoRisultato = null
+            prossimoOffset = null
             titoloRisolto = null
             artistaRisolto = null
+            riepilogo.text = ""
+            elenco.removeAllViews()
+            cercaAncora.visibility = View.GONE
+            stato.text = "Interpreto la richiesta e cerco le cover…"
+
             caricaDallaMemoria(q)?.let {
                 ultimoRisultato = it
                 aggiornaIdentitaRisolta(it)
-                mostraRisultato(it, "Dalla memoria del telefono")
+                mostraRisultato(it, "Dalla memoria del telefono · controllo aggiornamenti in corso…")
             }
         }
 
         cerca.isEnabled = false
         cercaAncora.isEnabled = false
-        stato.text = if (continuazione) "Cerco altre versioni…" else "Interpreto la richiesta e cerco le cover…"
-        if (!continuazione && ultimoRisultato == null) {
-            riepilogo.text = ""
-            elenco.removeAllViews()
-        }
+        if (continuazione) stato.text = "Cerco altre versioni…"
 
         val percorso = if (continuazione) "/api/cerca-ancora" else "/api/ricerca-libera"
         val corpo = JSONObject().apply {
@@ -151,6 +157,7 @@ class MainActivity : Activity() {
             try {
                 val risposta = chiamaMotore(percorso, corpo)
                 runOnUiThread {
+                    if (tokenRicerca != serialeRicerca) return@runOnUiThread
                     cerca.isEnabled = true
                     cercaAncora.isEnabled = true
                     ultimoRisultato = risposta
@@ -160,12 +167,15 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (tokenRicerca != serialeRicerca) return@runOnUiThread
                     cerca.isEnabled = true
                     cercaAncora.isEnabled = true
                     if (ultimoRisultato == null) {
+                        riepilogo.text = ""
+                        elenco.removeAllViews()
                         stato.text = "Ricerca non completata. ${e.message ?: "Errore non specificato"}"
                     } else {
-                        stato.text = "Mostro i risultati già disponibili. Aggiornamento non completato."
+                        stato.text = "Mostro i risultati della stessa ricerca già disponibili. Aggiornamento non completato."
                     }
                 }
             }
@@ -185,8 +195,8 @@ class MainActivity : Activity() {
         }
         val conn = (URL(base + percorso).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 4000
-            readTimeout = 12000
+            connectTimeout = 6000
+            readTimeout = 65000
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
@@ -236,7 +246,30 @@ class MainActivity : Activity() {
             return
         }
 
-        visualizzate.forEach { v -> elenco.addView(creaRiga(v)) }
+        val incisioni = visualizzate.filter { categoriaNatura(it) == "incisione_pubblicata" }
+        val performance = visualizzate.filter { categoriaNatura(it) == "performance_registrata" }
+        val daClassificare = visualizzate.filter { categoriaNatura(it) !in setOf("incisione_pubblicata", "performance_registrata") }
+
+        aggiungiSezione("INCISIONI / PUBBLICAZIONI", incisioni)
+        aggiungiSezione("PERFORMANCE REGISTRATE", performance)
+        aggiungiSezione("DA CLASSIFICARE", daClassificare)
+    }
+
+    private fun categoriaNatura(v: JSONObject): String {
+        val dichiarata = v.optString("naturaVersione").trim()
+        if (dichiarata.isNotEmpty() && dichiarata != "null") return dichiarata
+        return if (v.optString("tipo").equals("live", ignoreCase = true)) "performance_registrata" else "da_classificare"
+    }
+
+    private fun aggiungiSezione(titolo: String, versioni: List<JSONObject>) {
+        if (versioni.isEmpty()) return
+        elenco.addView(TextView(this).apply {
+            text = "$titolo (${versioni.size})"
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(14), 0, dp(4))
+        })
+        versioni.forEach { elenco.addView(creaRiga(it)) }
     }
 
     private fun creaOriginale(c: JSONObject): View {
@@ -261,10 +294,17 @@ class MainActivity : Activity() {
         val dettagli = mutableListOf<String>()
         if (!c.isNull("anno")) dettagli += c.optInt("anno").toString()
         c.optString("lingua").takeIf { it.isNotBlank() && it != "null" }?.let { dettagli += "lingua $it" }
-        c.optString("compositore").takeIf { it.isNotBlank() && it != "null" }?.let { dettagli += "autore $it" }
         if (dettagli.isNotEmpty()) blocco.addView(TextView(this).apply {
             text = dettagli.joinToString(" · ")
             textSize = 13f
+        })
+
+        val crediti = formattaCrediti(c.optJSONArray("crediti"))
+        val fallbackAutore = c.optString("compositore").takeIf { it.isNotBlank() && it != "null" }
+        if (crediti.isNotEmpty() || fallbackAutore != null) blocco.addView(TextView(this).apply {
+            text = if (crediti.isNotEmpty()) "Crediti: $crediti" else "Crediti: compositore — $fallbackAutore"
+            textSize = 12f
+            setPadding(0, dp(4), 0, 0)
         })
         return blocco
     }
@@ -281,6 +321,12 @@ class MainActivity : Activity() {
         val paese = v.optString("paese").takeIf { it.isNotBlank() && it != "null" }
         val affidabilita = v.optInt("affidabilita", v.optInt("confidenza", 0))
         val statoVerifica = v.optString("statoVerifica").takeIf { it.isNotBlank() && it != "null" }
+        val natura = v.optString("etichettaNaturaVersione").takeIf { it.isNotBlank() && it != "null" }
+            ?: when (categoriaNatura(v)) {
+                "incisione_pubblicata" -> "Incisione / pubblicazione"
+                "performance_registrata" -> "Performance registrata"
+                else -> "Natura da verificare"
+            }
 
         riga.addView(TextView(this).apply {
             text = v.optString("interprete", "Interprete non indicato")
@@ -297,8 +343,18 @@ class MainActivity : Activity() {
             text = parti.joinToString(" · ")
             textSize = 13f
         })
+        riga.addView(TextView(this).apply {
+            text = "Natura: $natura"
+            textSize = 12f
+        })
         if (statoVerifica != null) riga.addView(TextView(this).apply {
             text = "Verifica: ${statoVerifica.replace('_', ' ')}"
+            textSize = 12f
+        })
+
+        val crediti = formattaCrediti(v.optJSONArray("crediti"))
+        if (crediti.isNotEmpty()) riga.addView(TextView(this).apply {
+            text = "Crediti: $crediti"
             textSize = 12f
         })
 
@@ -315,6 +371,20 @@ class MainActivity : Activity() {
             })
         }
         return riga
+    }
+
+    private fun formattaCrediti(crediti: JSONArray?): String {
+        if (crediti == null || crediti.length() == 0) return ""
+        val elementi = mutableListOf<String>()
+        for (i in 0 until crediti.length()) {
+            val credito = crediti.optJSONObject(i) ?: continue
+            val ruolo = credito.optString("ruolo").trim().replace('_', ' ')
+            val nome = credito.optString("nome").trim()
+            if (ruolo.isEmpty() || nome.isEmpty()) continue
+            val voce = "$ruolo — $nome"
+            if (!elementi.contains(voce)) elementi += voce
+        }
+        return elementi.joinToString(" · ")
     }
 
     private fun chiaveMemoria(query: String): String =

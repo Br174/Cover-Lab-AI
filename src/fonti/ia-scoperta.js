@@ -1,8 +1,7 @@
 const PROVIDER_AMMESSI = new Set(['youtube', 'cataloghi', 'internet_archive']);
 
 // Nessun limite complessivo al catalogo: questi limiti valgono SOLO per una
-// singola tornata, così l'Archivio Vivo può continuare nei giri successivi
-// senza bloccare la risposta per decine di secondi.
+// singola tornata, cosi l Archivio Vivo puo continuare nei giri successivi.
 const MASSIMO_STRATEGIE_CONTESTO = 40;
 const MASSIMO_CANDIDATI_CONTESTO = 80;
 const MASSIMO_STRATEGIE_TORNATA = 8;
@@ -12,15 +11,46 @@ const MASSIMO_DOMANDE_DIAGNOSTICA = 16;
 const TIMEOUT_PIANO_MS = 30000;
 const TIMEOUT_FILTRO_MS = 25000;
 
+function provaJson(testoRaw) {
+  if (typeof testoRaw !== 'string') return null;
+  let s = testoRaw.trim();
+  if (!s) return null;
+
+  // Alcuni modelli racchiudono il JSON in blocchi Markdown anche quando viene
+  // richiesto response_format=json_object. Non deve azzerare l intero Regista.
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try { return JSON.parse(s); } catch { /* prova estrazione */ }
+
+  const primo = s.indexOf('{');
+  const ultimo = s.lastIndexOf('}');
+  if (primo >= 0 && ultimo > primo) {
+    try { return JSON.parse(s.slice(primo, ultimo + 1)); } catch { /* niente */ }
+  }
+  return null;
+}
+
 function leggiJson(raw) {
   if (!raw) return null;
-  if (raw.response && typeof raw.response === 'object') return raw.response;
-  if (typeof raw.response === 'string') {
-    try { return JSON.parse(raw.response); } catch { /* continua */ }
+
+  // Cloudflare Workers AI puo restituire direttamente l oggetto JSON.
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    if (Array.isArray(raw.strategie) || Array.isArray(raw.candidati) || Array.isArray(raw.risultati)) {
+      return raw;
+    }
+    if (raw.response && typeof raw.response === 'object') return raw.response;
   }
-  const contenuto = raw?.choices?.[0]?.message?.content;
-  if (typeof contenuto === 'string') {
-    try { return JSON.parse(contenuto); } catch { /* continua */ }
+
+  const tentativi = [
+    raw?.response,
+    raw?.output_text,
+    raw?.result,
+    raw?.choices?.[0]?.message?.content,
+    raw?.content?.[0]?.text,
+    raw?.content
+  ];
+  for (const candidato of tentativi) {
+    const letto = provaJson(candidato);
+    if (letto) return letto;
   }
   return null;
 }
@@ -33,6 +63,22 @@ function numero(valore, minimo = 0, massimo = 100) {
   const n = Number(valore);
   if (!Number.isFinite(n)) return minimo;
   return Math.max(minimo, Math.min(massimo, Math.round(n)));
+}
+
+function normalizza(valore = '') {
+  return String(valore || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’‘`]/g, "'")
+    .toLocaleLowerCase('it')
+    .replace(/[^a-z0-9' ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function annoDaData(valore) {
+  const m = String(valore || '').match(/(?:18|19|20|21)\d{2}/);
+  return m ? Number(m[0]) : null;
 }
 
 async function conTimeout(promessa, millisecondi, etichetta) {
@@ -49,6 +95,64 @@ async function conTimeout(promessa, millisecondi, etichetta) {
   }
 }
 
+export function estraiCandidatiDeterministici(originale, elementi = []) {
+  const titoloOriginale = testo(originale?.titolo, 250);
+  const titoloAtteso = normalizza(titoloOriginale);
+  const artistaOriginale = normalizza(originale?.artista);
+  if (!titoloAtteso) return [];
+
+  const risultato = [];
+  const visti = new Set();
+  for (let indice = 0; indice < Math.min(elementi.length, MASSIMO_RISULTATI_SORGENTE_TORNATA); indice += 1) {
+    const e = elementi[indice] || {};
+    const titoloFonte = normalizza(e.titolo);
+    if (!titoloFonte) continue;
+
+    const esatto = titoloFonte === titoloAtteso;
+    const contiene = !esatto && (
+      titoloFonte.includes(titoloAtteso) ||
+      titoloAtteso.includes(titoloFonte)
+    );
+    if (!esatto && !contiene) continue;
+
+    const interprete = testo(e.interprete || e.autoreCanale, 200);
+    if (!interprete) continue;
+    if (artistaOriginale && normalizza(interprete) === artistaOriginale) continue;
+
+    const chiave = `${indice}::${normalizza(interprete)}`;
+    if (visti.has(chiave)) continue;
+    visti.add(chiave);
+
+    risultato.push({
+      indice,
+      titolo: titoloOriginale || testo(e.titolo, 250),
+      interprete,
+      anno: annoDaData(e.dataPubblicazione),
+      lingua: testo(e.lingua, 20) || null,
+      paese: testo(e.paese, 30) || null,
+      tipo: 'dubbio',
+      affidabilita: esatto ? 65 : 55,
+      motivo: esatto
+        ? 'Titolo coincidente e interprete diverso: pista deterministica da verificare.'
+        : 'Titolo della fonte contiene il titolo della composizione: pista deterministica da verificare.',
+      origineDeterministica: true
+    });
+  }
+  return risultato;
+}
+
+function unisciInterpretazioni(ai = [], deterministiche = []) {
+  const mappa = new Map();
+  for (const r of [...ai, ...deterministiche]) {
+    const chiave = `${Number(r.indice)}::${normalizza(r.interprete)}::${normalizza(r.titolo)}`;
+    const esistente = mappa.get(chiave);
+    if (!esistente || Number(r.affidabilita || 0) > Number(esistente.affidabilita || 0)) {
+      mappa.set(chiave, r);
+    }
+  }
+  return [...mappa.values()].slice(0, MASSIMO_RISULTATI_SORGENTE_TORNATA);
+}
+
 export async function generaPianoScopertaConIA({
   titolo,
   artista,
@@ -61,7 +165,7 @@ export async function generaPianoScopertaConIA({
   agenda = null
 }, env) {
   if (!env?.AI?.run) {
-    return { disponibile: false, strategie: [], candidati: [], domandeEsplorate: [], esaurita: false };
+    return { disponibile: false, strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [], esaurita: false };
   }
 
   const esclusioniStrategie = strategieGiaUsate
@@ -134,7 +238,19 @@ export async function generaPianoScopertaConIA({
     };
   }
 
-  const dati = leggiJson(raw) || {};
+  const dati = leggiJson(raw);
+  if (!dati) {
+    return {
+      disponibile: true,
+      strategie: [],
+      candidati: [],
+      domandeEsplorate: [],
+      nuoveDomande: [],
+      esaurita: false,
+      errore: 'RISPOSTA_AI_NON_INTERPRETABILE'
+    };
+  }
+
   const strategie = (Array.isArray(dati.strategie) ? dati.strategie : [])
     .slice(0, MASSIMO_STRATEGIE_TORNATA)
     .map(s => {
@@ -189,11 +305,14 @@ export async function generaPianoScopertaConIA({
 }
 
 export async function interpretaRisultatiSorgenteConIA(originale, elementi = [], env) {
-  if (!env?.AI?.run || !elementi.length) return [];
+  const fallback = estraiCandidatiDeterministici(originale, elementi);
+  if (!elementi.length) return [];
+  if (!env?.AI?.run) return fallback;
 
   const input = elementi.slice(0, MASSIMO_RISULTATI_SORGENTE_TORNATA).map((e, indice) => ({
     indice,
     titolo: e.titolo,
+    interprete: e.interprete,
     descrizione: e.descrizione,
     autoreCanale: e.autoreCanale,
     dataPubblicazione: e.dataPubblicazione,
@@ -228,7 +347,7 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
       'FILTRO_SORGENTE'
     );
     const dati = leggiJson(raw) || {};
-    return (Array.isArray(dati.risultati) ? dati.risultati : [])
+    const ai = (Array.isArray(dati.risultati) ? dati.risultati : [])
       .filter(r => r?.correlato === true)
       .map(r => ({
         indice: Number(r.indice),
@@ -239,10 +358,12 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
         paese: testo(r.paese, 30) || null,
         tipo: testo(r.tipo, 40) || 'dubbio',
         affidabilita: numero(r.affidabilita ?? 25, 0, 85),
-        motivo: testo(r.motivo, 300)
+        motivo: testo(r.motivo, 300),
+        origineDeterministica: false
       }))
       .filter(r => Number.isInteger(r.indice) && r.indice >= 0 && r.indice < input.length && r.titolo);
+    return unisciInterpretazioni(ai, fallback);
   } catch {
-    return [];
+    return fallback;
   }
 }

@@ -33,7 +33,8 @@ function creditiUnici(...elenchi) {
     const ruolo = String(credito?.ruolo || '').trim();
     const nome = String(credito?.nome || '').trim();
     if (!ruolo || !nome) continue;
-    const chiave = `${ruolo.toLowerCase()}::${nome.toLowerCase()}`;
+    const ambito = String(credito?.ambito || '').trim().toLowerCase();
+    const chiave = `${ruolo.toLowerCase()}::${nome.toLowerCase()}::${ambito}`;
     if (visti.has(chiave)) continue;
     visti.add(chiave);
     risultato.push(credito);
@@ -53,6 +54,7 @@ function completaCrediti(versione = {}) {
       nome: interprete,
       fonte: versione.idMusicBrainz ? 'musicbrainz' : null,
       idEsterno: versione.idMusicBrainz || null,
+      ambito: 'versione',
       nota: 'Credito base derivato dall identita della versione.'
     });
   }
@@ -105,9 +107,31 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
     crediti = [];
   }
 
+  // I crediti della composizione sono parte essenziale del dossier di una cover:
+  // spiegano perche quella registrazione appartiene proprio a quell'opera.
+  let creditiOpera = [];
+  try {
+    const risultato = await db.prepare(`
+      SELECT v.id AS versione_id, cc.ruolo, cc.nome, cc.fonte,
+             cc.id_esterno AS idEsterno, cc.nota
+      FROM versioni v
+      JOIN crediti_composizione cc ON cc.composizione_id=v.composizione_id
+      WHERE v.id IN (${segnaposto})
+      ORDER BY cc.ruolo, cc.nome
+    `).bind(...ids).all();
+    creditiOpera = (risultato.results || []).map(r => ({
+      ...r,
+      ambito: 'composizione_originale',
+      nota: r.nota || 'Credito della composizione originale a cui la versione e collegata.'
+    }));
+  } catch {
+    creditiOpera = [];
+  }
+
   const conflitti = await leggiConflittiVersioni(db, ids);
   const fontiPerVersione = raggruppa(fonti);
   const creditiPerVersione = raggruppa(crediti);
+  const creditiOperaPerVersione = raggruppa(creditiOpera);
   const conflittiPerVersione = raggruppa(conflitti);
 
   return versioni.map(versione => completaVersione({
@@ -119,7 +143,8 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
     crediti: creditiUnici(
       Array.isArray(versione.crediti) ? versione.crediti : [],
       Array.isArray(versione.creditiOpera) ? versione.creditiOpera : [],
-      (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
+      (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => ({ ...resto, ambito: resto.ambito || 'versione' })),
+      (creditiOperaPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
     )
   }, (conflittiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)));
 }

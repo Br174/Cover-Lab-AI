@@ -53,6 +53,7 @@ const REGOLE = Object.freeze({
 });
 
 const runtime = new Map();
+let tabellaRuntimeAssicurata = null;
 
 function dormiDefault(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, ms))); }
 function statoRuntime(provider) {
@@ -90,24 +91,48 @@ function chiaveQuotaPacifico(oraMs) {
   } catch { return new Date(oraMs).toISOString().slice(0, 10); }
 }
 
-async function leggiPersistenza(db, provider) {
-  if (!db?.prepare) return null;
-  try {
-    return await db.prepare('SELECT provider, finestra_quota AS finestraQuota, chiamate_finestra AS chiamateFinestra, ultimo_accesso_ms AS ultimoAccessoMs, sospeso_fino_ms AS sospesoFinoMs FROM limiti_provider_runtime WHERE provider=?1 LIMIT 1').bind(provider).first();
-  } catch (e) {
-    if (String(e?.message || '').includes('no such table')) return null;
-    throw e;
+async function assicuraTabellaPersistenza(db) {
+  if (!db?.prepare) return false;
+  if (!tabellaRuntimeAssicurata) {
+    tabellaRuntimeAssicurata = (async () => {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS limiti_provider_runtime (
+          provider TEXT PRIMARY KEY,
+          finestra_quota TEXT,
+          chiamate_finestra INTEGER NOT NULL DEFAULT 0,
+          ultimo_accesso_ms INTEGER NOT NULL DEFAULT 0,
+          sospeso_fino_ms INTEGER NOT NULL DEFAULT 0,
+          ultimo_http INTEGER,
+          aggiornato_il TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+      await db.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_limiti_provider_sospeso
+        ON limiti_provider_runtime(sospeso_fino_ms)
+      `).run();
+      return true;
+    })().catch(e => {
+      tabellaRuntimeAssicurata = null;
+      throw e;
+    });
   }
+  return tabellaRuntimeAssicurata;
 }
+
 async function assicuraPersistenza(db, provider) {
   if (!db?.prepare) return false;
   try {
+    await assicuraTabellaPersistenza(db);
     await db.prepare('INSERT OR IGNORE INTO limiti_provider_runtime(provider) VALUES (?1)').bind(provider).run();
     return true;
   } catch (e) {
     if (String(e?.message || '').includes('no such table')) return false;
     throw e;
   }
+}
+async function leggiPersistenza(db, provider) {
+  if (!await assicuraPersistenza(db, provider)) return null;
+  return db.prepare('SELECT provider, finestra_quota AS finestraQuota, chiamate_finestra AS chiamateFinestra, ultimo_accesso_ms AS ultimoAccessoMs, sospeso_fino_ms AS sospesoFinoMs, ultimo_http AS ultimoHttp, aggiornato_il AS aggiornatoIl FROM limiti_provider_runtime WHERE provider=?1 LIMIT 1').bind(provider).first();
 }
 async function registraSospensione(db, provider, sospesoFinoMs, codiceHttp = null) {
   if (!await assicuraPersistenza(db, provider)) return;
@@ -221,5 +246,19 @@ export async function eseguiConGestoreLimiti({ provider, db = null, operazione, 
   }
 }
 
-export function azzeraStatoGestoreLimitiPerTest() { runtime.clear(); }
+export async function leggiStatoPersistenteLimiti(db) {
+  if (!db?.prepare) return [];
+  try {
+    await assicuraTabellaPersistenza(db);
+    const r = await db.prepare(`
+      SELECT provider, finestra_quota AS finestraQuota, chiamate_finestra AS chiamateFinestra,
+             ultimo_accesso_ms AS ultimoAccessoMs, sospeso_fino_ms AS sospesoFinoMs,
+             ultimo_http AS ultimoHttp, aggiornato_il AS aggiornatoIl
+      FROM limiti_provider_runtime ORDER BY provider
+    `).all();
+    return r.results || [];
+  } catch { return []; }
+}
+
+export function azzeraStatoGestoreLimitiPerTest() { runtime.clear(); tabellaRuntimeAssicurata = null; }
 export const DURATA_GIORNO_MS = GIORNO_MS;

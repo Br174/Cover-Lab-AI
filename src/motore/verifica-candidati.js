@@ -48,6 +48,7 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
   );
   const base = limita(candidato?.affidabilita_proposta || candidato?.affidabilitaProposta || 0);
   const fonteForte = [...providerIndipendenti].some(p => FONTI_FORTI.has(p));
+  const confermataDalPrimoFiltro = candidato?.stato === 'fonte_confermata_ai';
 
   if (fonteForte && base >= 55) {
     return {
@@ -58,11 +59,10 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
     };
   }
 
-  // Regola centrale CoverLab: se il primo filtro AI ha gia riconosciuto come
-  // coerente una registrazione trovata su una fonte reale, non serve una seconda
-  // fonte obbligatoria. La fonte prova l esistenza; il punteggio >=70 rappresenta
-  // il controllo di relazione con la composizione, non una semplice memoria AI.
-  if (providerIndipendenti.size >= 1 && base >= 70) {
+  // Regola centrale CoverLab: una singola fonte reale basta quando il PRIMO
+  // filtro AI ha gia confrontato quella fonte con la composizione e l ha marcata
+  // esplicitamente come coerente. Il solo punteggio, da solo, non basta.
+  if (providerIndipendenti.size >= 1 && confermataDalPrimoFiltro && base >= 70) {
     return {
       promosso: true,
       affidabilita: Math.max(soglia, Math.min(96, base + 20)),
@@ -71,8 +71,8 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
     };
   }
 
-  // Una fonte debole o un risultato deterministico ambiguo puo ancora essere
-  // chiarito da un controllo AI supplementare sulla stessa evidenza reale.
+  // Una fonte debole, un titolo omonimo o un risultato deterministico possono
+  // ancora essere chiariti da un controllo AI supplementare sulla stessa prova.
   if (providerIndipendenti.size >= 1 && verificaAI?.confermato === true && Number(verificaAI.affidabilita || 0) >= 70) {
     return {
       promosso: true,

@@ -42,12 +42,12 @@ export function valutaAmmissioneArchivio({
     };
   }
 
-  const essenziali = [
+  const essenzialiVersione = [
     ...creditiEssenziali(creditiVersione),
-    ...creditiEssenziali(creditiComposizione),
     ...creditiEssenziali(versione.creditiOpera || []),
     ...creditiEssenziali(versione.crediti || [])
   ];
+  const essenzialiComposizione = creditiEssenziali(creditiComposizione);
 
   const relazioneStrutturata = Boolean(
     verificaStrutturata?.verificato === true ||
@@ -61,29 +61,44 @@ export function valutaAmmissioneArchivio({
   const provider = fontiIndipendenti(fonti);
   const relazioneMultifonte = provider.size >= 2 && Number(versione.affidabilita || 0) >= 90;
 
-  if (!essenziali.length) {
+  if (relazioneStrutturata) {
+    const essenziali = [...essenzialiVersione, ...essenzialiComposizione];
+    if (!essenziali.length) {
+      return {
+        ammessa: false,
+        statoArchivio: 'in_verifica',
+        motivo: 'La relazione con l opera e strutturata, ma mancano ancora crediti essenziali documentati.'
+      };
+    }
     return {
-      ammessa: false,
-      statoArchivio: 'in_verifica',
-      motivo: 'Mancano crediti essenziali che colleghino la versione alla composizione.'
+      ammessa: true,
+      statoArchivio: 'archiviata',
+      motivo: 'Relazione strutturata con l opera e crediti essenziali verificati.',
+      creditiEssenziali: essenziali
     };
   }
 
-  if (!relazioneStrutturata && !relazioneMultifonte) {
+  if (relazioneMultifonte && essenzialiVersione.length) {
+    return {
+      ammessa: true,
+      statoArchivio: 'archiviata',
+      motivo: `Relazione confermata da ${provider.size} fonti indipendenti e crediti essenziali specifici della versione.`,
+      creditiEssenziali: essenzialiVersione
+    };
+  }
+
+  if (!essenzialiVersione.length) {
     return {
       ammessa: false,
       statoArchivio: 'in_verifica',
-      motivo: 'I crediti esistono, ma il legame con la composizione non è ancora verificato da prove sufficienti.'
+      motivo: 'Mancano crediti essenziali specifici della versione e non esiste ancora una relazione strutturata con l opera.'
     };
   }
 
   return {
-    ammessa: true,
-    statoArchivio: 'archiviata',
-    motivo: relazioneStrutturata
-      ? 'Relazione strutturata con l opera e crediti essenziali verificati.'
-      : `Relazione confermata da ${provider.size} fonti indipendenti e crediti essenziali disponibili.`,
-    creditiEssenziali: essenziali
+    ammessa: false,
+    statoArchivio: 'in_verifica',
+    motivo: 'I crediti esistono, ma il legame con la composizione non e ancora verificato da prove sufficienti.'
   };
 }
 

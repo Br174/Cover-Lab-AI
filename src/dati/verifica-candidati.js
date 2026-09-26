@@ -8,7 +8,12 @@ export async function candidatiDaVerificare(db, chiaveComposizione, limite = 2) 
     FROM candidati_scoperta
     WHERE chiave_composizione=?1
       AND stato IN ('da_verificare','verifica_parziale')
-    ORDER BY numero_fonti DESC, affidabilita_proposta DESC, prima_scoperta ASC
+    ORDER BY
+      CASE WHEN stato='da_verificare' THEN 0 ELSE 1 END,
+      CASE WHEN stato='verifica_parziale' THEN datetime(ultima_verifica) END ASC,
+      numero_fonti DESC,
+      affidabilita_proposta DESC,
+      prima_scoperta ASC
     LIMIT ?2
   `).bind(chiaveComposizione, quantita).all();
   return risultato.results || [];

@@ -49,6 +49,19 @@ const REGOLE = Object.freeze({
     cacheTtlMs: 60000,
     ricontrollareSe: ['429/403 ripetuti', 'documentazione cambia', 'comportamento anomalo'],
     note: 'Intervallo operativo interno conservativo: la guida ufficiale non dichiara un singolo limite numerico globale.'
+  }),
+  wikipedia: Object.freeze({
+    provider: 'wikipedia', nome: 'Wikipedia / Wikimedia Action API', verificatoIl: '2026-09-26',
+    documentazione: 'https://www.mediawiki.org/wiki/API:Etiquette',
+    modalitaUso: 'Action API in sola lettura con User-Agent identificabile, JSON, maxlag e richieste seriali.',
+    apiKey: 'non richiesta per lettura pubblica',
+    limiteUfficiale: 'nessun tetto fisso unico per le letture; Wikimedia richiede uso rispettoso, massimo 3 richieste concorrenti e rispetto di 429/Retry-After',
+    richiestePerFinestra: null, finestraMs: null, intervalloMinimoMs: 1000, concorrenzaMassima: 1,
+    quotaGiornaliera: null, resetQuota: null,
+    cache: 'raccomandata per evitare di richiedere ripetutamente lo stesso contenuto', segnaliLimitazione: [429, 503], retryAfter: true, backoff: true,
+    cacheTtlMs: 5 * 60 * 1000,
+    ricontrollareSe: ['429/maxlag ripetuti', 'documentazione o policy cambia', 'comportamento anomalo'],
+    note: 'Cover Lab usa concorrenza 1, piu prudente del massimo 3 raccomandato, e invia maxlag=5.'
   })
 });
 

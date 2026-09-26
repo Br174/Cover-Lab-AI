@@ -10,6 +10,7 @@ import {
   salvaFontiVersione,
   salvaCreditiVersione
 } from '../dati/versioni-verificate.js';
+import { leggiCreditiComposizione } from '../dati/crediti-composizione.js';
 import {
   individuaConflittiTraCandidatoEVerifica,
   salvaConflittiVersione,
@@ -18,6 +19,7 @@ import {
 import { salvaStrategieScoperta } from '../dati/scoperta.js';
 import { verificaCandidatoSuMusicBrainz } from '../fonti/musicbrainz-verifica.js';
 import { indagaConflittoConIA } from './indagine-conflitti-ai.js';
+import { valutaAmmissioneArchivio } from './ammissione-archivio.js';
 
 function limita(n, min = 0, max = 100) {
   const v = Number(n);
@@ -97,9 +99,7 @@ async function avviaIndaginiConflitti({
   conflitti,
   limite = 2
 }) {
-  if (!conflitti?.length) {
-    return { avviate: 0, strategieNuove: 0 };
-  }
+  if (!conflitti?.length) return { avviate: 0, strategieNuove: 0 };
 
   let avviate = 0;
   let strategieNuove = 0;
@@ -111,7 +111,6 @@ async function avviaIndaginiConflitti({
       versione,
       conflitto
     }, env);
-
     if (!indagine?.disponibile || indagine?.errore) continue;
 
     const nuove = await salvaStrategieScoperta(
@@ -119,7 +118,6 @@ async function avviaIndaginiConflitti({
       composizione.chiave_ricerca,
       indagine.strategie || []
     );
-
     const aggiornata = await aggiornaIndagineConflitto(
       db,
       versioneId,
@@ -127,13 +125,11 @@ async function avviaIndaginiConflitti({
       indagine,
       nuove
     );
-
     if (aggiornata) {
       avviate += 1;
       strategieNuove += Number(nuove || 0);
     }
   }
-
   return { avviate, strategieNuove };
 }
 
@@ -141,6 +137,7 @@ async function migrazioneVerificaDisponibile(db) {
   try {
     await db.prepare('SELECT affidabilita_verificata, versione_id FROM candidati_scoperta LIMIT 1').all();
     await db.prepare('SELECT id FROM crediti_versione LIMIT 1').all();
+    await db.prepare('SELECT stato_archivio FROM versioni LIMIT 1').all();
     return true;
   } catch (e) {
     const messaggio = String(e?.message || '');
@@ -159,7 +156,8 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
   const composizione = await trovaComposizione(db, titolo, artista);
   if (!composizione) return { stato: 'composizione_non_archiviata', esaminati: 0, promossi: 0 };
 
-  const limite = Math.max(1, Math.min(5, Number(opzioni.limite || 2)));
+  const creditiOriginale = await leggiCreditiComposizione(db, composizione.id);
+  const limite = Math.max(1, Math.min(10, Number(opzioni.limite || 5)));
   const soglia = Math.max(80, Math.min(100, Number(opzioni.soglia || 90)));
   const candidati = await candidatiDaVerificare(db, composizione.chiave_ricerca, limite);
   if (!candidati.length) return { stato: 'nessun_candidato', esaminati: 0, promossi: 0 };
@@ -167,6 +165,7 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
   const opereDerivate = await opereCollegateComposizione(db, composizione.id);
   const esiti = [];
   let promossi = 0;
+  let trattenutiPerCrediti = 0;
   let indaginiConflittiAvviate = 0;
   let strategieConflittiNuove = 0;
 
@@ -216,10 +215,51 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
         }
       : versioneDaCandidato(candidato, valutazione.affidabilita);
 
-    const versioneId = await salvaVersioneVerificata(db, composizione.id, versione);
     const fontiFinali = [...fonti];
     if (strutturata?.fonte) fontiFinali.push(strutturata.fonte);
+
+    const crediti = [...(strutturata?.crediti || [])];
+    if (composizione.compositore) {
+      for (const nome of String(composizione.compositore).split(',').map(x => x.trim()).filter(Boolean)) {
+        crediti.push({ ruolo: 'compositore', nome, fonte: 'musicbrainz' });
+      }
+    }
+    if (!crediti.some(c => c.ruolo === 'interprete') && candidato.interprete) {
+      crediti.push({ ruolo: 'interprete', nome: candidato.interprete, fonte: candidato.prima_origine || null });
+    }
+
+    const ammissione = valutaAmmissioneArchivio({
+      versione,
+      creditiVersione: crediti,
+      creditiComposizione: creditiOriginale,
+      fonti: fontiFinali,
+      verificaStrutturata: strutturata
+    });
+
+    if (!ammissione.ammessa) {
+      await aggiornaEsitoCandidato(db, candidato.id, {
+        stato: 'verifica_crediti_insufficiente',
+        affidabilita: valutazione.affidabilita,
+        motivo: ammissione.motivo
+      });
+      trattenutiPerCrediti += 1;
+      esiti.push({
+        id: candidato.id,
+        titolo: versione.titolo,
+        interprete: versione.interprete,
+        stato: 'in_verifica_archivio',
+        affidabilita: valutazione.affidabilita,
+        motivoArchivio: ammissione.motivo,
+        metodo: valutazione.metodo
+      });
+      continue;
+    }
+
+    versione.statoArchivio = 'archiviata';
+    versione.motivoArchivio = ammissione.motivo;
+    const versioneId = await salvaVersioneVerificata(db, composizione.id, versione);
     await salvaFontiVersione(db, versioneId, fontiFinali);
+    await salvaCreditiVersione(db, versioneId, crediti);
 
     let conflitti = [];
     let indagineConflitti = { avviate: 0, strategieNuove: 0 };
@@ -239,17 +279,6 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       strategieConflittiNuove += indagineConflitti.strategieNuove;
     }
 
-    const crediti = [...(strutturata?.crediti || [])];
-    if (composizione.compositore) {
-      for (const nome of String(composizione.compositore).split(',').map(x => x.trim()).filter(Boolean)) {
-        crediti.push({ ruolo: 'compositore', nome, fonte: 'musicbrainz' });
-      }
-    }
-    if (!crediti.some(c => c.ruolo === 'interprete') && candidato.interprete) {
-      crediti.push({ ruolo: 'interprete', nome: candidato.interprete, fonte: candidato.prima_origine || null });
-    }
-    await salvaCreditiVersione(db, versioneId, crediti);
-
     await aggiornaEsitoCandidato(db, candidato.id, {
       stato: 'verificato',
       affidabilita: valutazione.affidabilita,
@@ -261,9 +290,11 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       id: candidato.id,
       titolo: versione.titolo,
       interprete: versione.interprete,
-      stato: 'verificato',
+      stato: 'archiviato',
       affidabilita: valutazione.affidabilita,
       statoVerifica: versione.statoVerifica || 'verificato_multifonte',
+      statoArchivio: 'archiviata',
+      motivoArchivio: ammissione.motivo,
       conflittiRilevati: conflitti.length,
       conflittiInIndagine: indagineConflitti.avviate,
       strategieConflittiNuove: indagineConflitti.strategieNuove,
@@ -276,6 +307,7 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
     stato: 'ok',
     esaminati: candidati.length,
     promossi,
+    trattenutiPerCrediti,
     indaginiConflittiAvviate,
     strategieConflittiNuove,
     esiti

@@ -168,6 +168,54 @@ function unisciCrediti(...gruppi) {
   return [...mappa.values()];
 }
 
+async function confermaPersistenzaArchivio(db, versioneId, motivoArchivio) {
+  if (!db || !versioneId) return { confermata: false, statoArchivio: null };
+
+  await db.prepare(`
+    UPDATE versioni
+    SET stato_archivio='archiviata',
+        motivo_archivio=COALESCE(?2, motivo_archivio),
+        data_ammissione_archivio=COALESCE(data_ammissione_archivio, CURRENT_TIMESTAMP),
+        data_ultima_verifica=CURRENT_TIMESTAMP
+    WHERE id=?1
+      AND affidabilita>=90
+      AND lower(COALESCE(tipo,'')) NOT IN ('originale','dubbio','non correlato')
+      AND lower(COALESCE(stato_verifica,'')) LIKE 'verificato%'
+      AND (
+        id_opera_musicbrainz IS NOT NULL
+        OR EXISTS (
+          SELECT 1 FROM fonti_verifica fv
+          WHERE fv.versione_id=versioni.id
+            AND trim(COALESCE(fv.fonte,''))<>''
+        )
+      )
+  `).bind(versioneId, motivoArchivio || null).run();
+
+  const riga = await db.prepare(`
+    SELECT stato_archivio AS statoArchivio,
+           affidabilita,
+           stato_verifica AS statoVerifica,
+           id_opera_musicbrainz AS idOperaMusicBrainz,
+           EXISTS(
+             SELECT 1 FROM fonti_verifica fv
+             WHERE fv.versione_id=versioni.id
+               AND trim(COALESCE(fv.fonte,''))<>''
+           ) AS haFonteReale
+    FROM versioni
+    WHERE id=?1
+    LIMIT 1
+  `).bind(versioneId).first();
+
+  return {
+    confermata: riga?.statoArchivio === 'archiviata',
+    statoArchivio: riga?.statoArchivio || null,
+    affidabilita: Number(riga?.affidabilita || 0),
+    statoVerifica: riga?.statoVerifica || null,
+    idOperaMusicBrainz: riga?.idOperaMusicBrainz || null,
+    haFonteReale: Boolean(Number(riga?.haFonteReale || 0))
+  };
+}
+
 export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzioni = {}) {
   const db = env?.DB;
   if (!db || !titolo || !artista) return { stato: 'dati_insufficienti', esaminati: 0, promossi: 0 };
@@ -292,6 +340,27 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
     await salvaFontiVersione(db, versioneId, fontiFinali);
     await salvaCreditiVersione(db, versioneId, crediti);
 
+    const persistenza = await confermaPersistenzaArchivio(db, versioneId, ammissione.motivo);
+    if (!persistenza.confermata) {
+      const motivoPersistenza = `Persistenza Archivio non confermata dopo il salvataggio: stato=${persistenza.statoArchivio || 'assente'}, fonteReale=${persistenza.haFonteReale ? 'si' : 'no'}, affidabilita=${persistenza.affidabilita || 0}.`;
+      await aggiornaEsitoCandidato(db, candidato.id, {
+        stato: 'verifica_parziale',
+        affidabilita: valutazione.affidabilita,
+        motivo: motivoPersistenza
+      });
+      esiti.push({
+        id: candidato.id,
+        titolo: versione.titolo,
+        interprete: versione.interprete,
+        stato: 'persistenza_non_confermata',
+        affidabilita: valutazione.affidabilita,
+        motivoArchivio: ammissione.motivo,
+        persistenza,
+        metodo: valutazione.metodo
+      });
+      continue;
+    }
+
     let conflitti = [];
     let indagineConflitti = { avviate: 0, strategieNuove: 0 };
     if (strutturata?.verificato && strutturata?.versione) {
@@ -324,7 +393,7 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       stato: 'archiviato',
       affidabilita: valutazione.affidabilita,
       statoVerifica: versione.statoVerifica,
-      statoArchivio: 'archiviata',
+      statoArchivio: persistenza.statoArchivio,
       motivoArchivio: ammissione.motivo,
       creditiTotali: crediti.length,
       creditiAI: crediti.filter(c => c.fonte === 'ai_arricchimento').length,
@@ -332,7 +401,8 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       conflittiInIndagine: indagineConflitti.avviate,
       strategieConflittiNuove: indagineConflitti.strategieNuove,
       versioneId,
-      metodo: valutazione.metodo
+      metodo: valutazione.metodo,
+      persistenzaConfermata: true
     });
   }
 

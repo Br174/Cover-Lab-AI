@@ -10,6 +10,11 @@ on:
       - 'mother/**'
     paths:
       - 'android/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
       - 'UAB_PROJECT_ADAPTER.txt'
       - '.github/workflows/android-apk.yml'
 

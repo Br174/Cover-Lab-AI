@@ -26,6 +26,18 @@ const REGOLE = Object.freeze({
     ricontrollareSe: ['429/403 ripetuti', 'documentazione o API cambia', 'comportamento anomalo'],
     note: 'L intervallo operativo e volutamente conservativo rispetto al limite approssimativo.'
   }),
+  deezer: Object.freeze({
+    provider: 'deezer', nome: 'Deezer API', verificatoIl: '2026-09-26',
+    documentazione: 'https://developers.deezer.com/api',
+    modalitaUso: 'Ricerca pubblica di metadati tracce; nessun download o riproduzione in Cover Lab.', apiKey: 'non richiesta per la ricerca pubblica usata qui',
+    limiteUfficiale: 'nessun tetto pubblico unico assunto da Cover Lab; viene applicato pacing prudenziale e rispetto di 429/Retry-After',
+    richiestePerFinestra: null, finestraMs: null, intervalloMinimoMs: 750, concorrenzaMassima: 1,
+    quotaGiornaliera: null, resetQuota: null,
+    cache: 'cache breve per evitare ricerche duplicate', segnaliLimitazione: [429, 503], retryAfter: true, backoff: true,
+    cacheTtlMs: 60000,
+    ricontrollareSe: ['429/403 ripetuti', 'documentazione o API cambia', 'comportamento anomalo'],
+    note: 'Il limite interno e intenzionalmente conservativo e non viene presentato come limite ufficiale Deezer.'
+  }),
   youtube: Object.freeze({
     provider: 'youtube', nome: 'YouTube Data API', verificatoIl: '2026-09-26',
     documentazione: 'https://developers.google.com/youtube/v3/determine_quota_cost',
@@ -37,6 +49,18 @@ const REGOLE = Object.freeze({
     cacheTtlMs: 0,
     ricontrollareSe: ['quota o policy cambia', '403/429 ripetuti', 'versione API o documentazione cambia'],
     note: 'Le quote YouTube sono configurabili nel progetto Google Cloud e possono differire dal valore predefinito.'
+  }),
+  web_editoriale: Object.freeze({
+    provider: 'web_editoriale', nome: 'GDELT Context API', verificatoIl: '2026-09-26',
+    documentazione: 'https://blog.gdeltproject.org/announcing-the-gdelt-context-2-0-api/',
+    modalitaUso: 'Ricerca pubblica di articoli e contesto testuale per verificare citazioni di registrazioni.', apiKey: 'non richiesta',
+    limiteUfficiale: 'nessun tetto di chiamate assunto; l API documenta fino a 75 risultati per richiesta e Cover Lab applica pacing prudenziale',
+    richiestePerFinestra: null, finestraMs: null, intervalloMinimoMs: 1500, concorrenzaMassima: 1,
+    quotaGiornaliera: null, resetQuota: null,
+    cache: 'cache raccomandata per evitare query editoriali duplicate', segnaliLimitazione: [429, 503], retryAfter: true, backoff: true,
+    cacheTtlMs: 5 * 60 * 1000,
+    ricontrollareSe: ['429/503 ripetuti', 'documentazione o API cambia', 'comportamento anomalo'],
+    note: 'Usato come verificatore editoriale, non come database musicale autoritativo.'
   }),
   internet_archive: Object.freeze({
     provider: 'internet_archive', nome: 'Internet Archive', verificatoIl: '2026-09-26',

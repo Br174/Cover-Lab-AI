@@ -1,3 +1,5 @@
+import { assicuraSchema080 } from './schema-080.js';
+
 function limita(valore, ripiego = 20, massimo = 50) {
   const n = Number(valore);
   if (!Number.isFinite(n) || n <= 0) return ripiego;
@@ -23,6 +25,7 @@ export async function statisticheArchivioCloud(db) {
     nuoveUltimoAggiornamento: 0,
     ultimoAggiornamento: null
   };
+  await assicuraSchema080(db);
 
   const totali = await db.prepare(`
     SELECT
@@ -61,6 +64,7 @@ export async function statisticheArchivioCloud(db) {
 
 export async function cercaArchivioCloud(db, query, { offset = 0, limite = 20 } = {}) {
   if (!db) return { stato: 'database_non_collegato', query, risultati: [] };
+  await assicuraSchema080(db);
   const parole = paroleRicerca(query);
   if (!parole.length) return { stato: 'query_vuota', query, risultati: [] };
 

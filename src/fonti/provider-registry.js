@@ -2,6 +2,8 @@ import { cercaSuYouTube, statoProviderYouTube } from './youtube.js';
 import { cercaNelCatalogoApple, statoProviderApple } from './apple-search.js';
 import { cercaSuInternetArchive, statoProviderInternetArchive } from './internet-archive.js';
 import { cercaSuWikipedia, statoProviderWikipedia } from './wikipedia.js';
+import { cercaSuDeezer, statoProviderDeezer } from './deezer.js';
+import { cercaSuWebEditoriale, statoProviderWebEditoriale } from './gdelt-web.js';
 
 export const CAPACITA_PROVIDER = Object.freeze({
   SCOPERTA: 'scoperta',
@@ -37,7 +39,7 @@ function descriptorWikipedia(env, opzioni = {}) {
     nome: 'Wikipedia / MediaWiki',
     priorita: 95,
     affidabilitaBase: 78,
-    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
     aliasStrategia: ['wikipedia', 'enciclopedia', 'mediawiki'],
     paginaUnica: true,
     stato() {
@@ -80,7 +82,7 @@ function descriptorYouTube(env, opzioni = {}) {
     nome: 'YouTube',
     priorita: 90,
     affidabilitaBase: 65,
-    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
     aliasStrategia: ['youtube'],
     paginaUnica: false,
     stato() {
@@ -111,13 +113,50 @@ function descriptorYouTube(env, opzioni = {}) {
   };
 }
 
+function descriptorDeezer(env, opzioni = {}) {
+  return {
+    id: 'deezer',
+    nome: 'Deezer',
+    priorita: 86,
+    affidabilitaBase: 82,
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
+    aliasStrategia: ['deezer', 'catalogo_deezer'],
+    paginaUnica: false,
+    stato() {
+      return statoProviderDeezer();
+    },
+    async cerca({ query, cursore = null, limite = 50 } = {}, controllo = {}) {
+      return cercaSuDeezer({ query, cursore, limite }, opzioni.fetchDeezerFn || fetch, controllo.signal || null);
+    },
+    preparaCandidato(candidato, elemento) {
+      return {
+        ...candidato,
+        titolo: candidato.titolo || elemento?.titolo || null,
+        interprete: candidato.interprete || elemento?.interprete || null,
+        anno: candidato.anno || annoDaData(elemento?.dataPubblicazione),
+        affidabilita: Math.max(Number(candidato.affidabilita || 0), 72)
+      };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'deezer',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: [elemento.interprete, elemento.titolo].filter(Boolean).join(' — '),
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
+      };
+    }
+  };
+}
+
 function descriptorApple(env, opzioni = {}) {
   return {
     id: 'apple_catalogo',
     nome: 'Catalogo Apple',
     priorita: 80,
     affidabilitaBase: 80,
-    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
     aliasStrategia: ['cataloghi', 'apple', 'apple_catalogo'],
     paginaUnica: true,
     stato() {
@@ -162,13 +201,47 @@ function descriptorApple(env, opzioni = {}) {
   };
 }
 
+function descriptorWebEditoriale(env, opzioni = {}) {
+  return {
+    id: 'web_editoriale',
+    nome: 'Web editoriale pubblico',
+    priorita: 74,
+    affidabilitaBase: 68,
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
+    aliasStrategia: ['web', 'web_editoriale', 'giornali', 'riviste'],
+    paginaUnica: true,
+    stato() {
+      return statoProviderWebEditoriale();
+    },
+    async cerca({ query, lingua = null, limite = 25 } = {}, controllo = {}) {
+      return cercaSuWebEditoriale({ query, lingua, limite }, opzioni.fetchWebEditorialeFn || fetch, controllo.signal || null);
+    },
+    preparaCandidato(candidato) {
+      return {
+        ...candidato,
+        affidabilita: Math.max(Number(candidato.affidabilita || 0), 70)
+      };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'web_editoriale',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: elemento.titolo,
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
+      };
+    }
+  };
+}
+
 function descriptorInternetArchive(env, opzioni = {}) {
   return {
     id: 'internet_archive',
     nome: 'Internet Archive',
     priorita: 70,
     affidabilitaBase: 55,
-    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    capacita: [CAPACITA_PROVIDER.SCOPERTA, CAPACITA_PROVIDER.VERIFICA],
     aliasStrategia: ['archivi', 'internet_archive'],
     paginaUnica: false,
     stato() {
@@ -207,7 +280,9 @@ export function creaRegistroProvider(env = {}, opzioni = {}) {
     descriptorMusicBrainz(env, opzioni),
     descriptorWikipedia(env, opzioni),
     descriptorYouTube(env, opzioni),
+    descriptorDeezer(env, opzioni),
     descriptorApple(env, opzioni),
+    descriptorWebEditoriale(env, opzioni),
     descriptorInternetArchive(env, opzioni)
   ];
   return new Map(providers.map(provider => [provider.id, provider]));

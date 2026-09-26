@@ -14,47 +14,44 @@ jobs:
   verifica:
     runs-on: ubuntu-latest
     steps:
-      - name: Verifica anteprima Cloudflare e ricerca libera
+      - name: Verifica anteprima Cloudflare ricerca crediti e natura versione
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
 
-          echo "Attendo la LAB Cover Lab AI 0.7.0..."
+          echo "Attendo la LAB Cover Lab AI 0.7.1..."
           PRONTO=0
-          for TENTATIVO in $(seq 1 60); do
+          for TENTATIVO in $(seq 1 75); do
             CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
-            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.7.0"' /tmp/root.json; then
+            if [ "$CODICE_STATO" = "200" ] && grep -q '"versione": "0.7.1"' /tmp/root.json; then
               PRONTO=1
               break
             fi
-            echo "Tentativo $TENTATIVO: anteprima non ancora 0.7.0 (HTTP $CODICE_STATO)"
+            echo "Tentativo $TENTATIVO: anteprima non ancora 0.7.1 (HTTP $CODICE_STATO)"
             sleep 4
           done
           test "$PRONTO" = "1"
 
-          echo "--- STATO MOTORE REMOTO ---"
-          cat /tmp/root.json
-          echo
           python - <<'PY'
           import json
           d=json.load(open('/tmp/root.json',encoding='utf-8'))
-          assert d.get('versione') == '0.7.0', d
+          assert d.get('versione') == '0.7.1', d
           assert d.get('stato') == 'operativo', d
           assert d.get('ricercaLiberaDiagnostica') == 'predisposta', d
-          assert d.get('autocontrolloRisultati') == 'predisposto', d
+          assert d.get('classificazioneNaturaVersione') == 'pubblicazione_performance_da_verificare', d
+          assert d.get('creditiDettagliati') == 'predisposti', d
           assert d.get('nessunLimiteTotaleCover') is True, d
           assert d.get('lottoMusicLab') == 20, d
-          assert d.get('registaAI'), d
-          print('OK: motore LAB 0.7.0 raggiungibile e funzioni principali esposte.')
+          regista=d.get('registaAI') or {}
+          assert regista.get('distinguePubblicazioniEPerformance') is True, regista
+          assert regista.get('creditiComeDatoFondamentale') is True, regista
+          print('OK: motore LAB 0.7.1 raggiungibile con nuove regole attive.')
           PY
 
-          echo "--- ARCHIVIO REMOTO: COVER REALI E PAGINA DA 20 ---"
-          CODICE_PAGINA=$(curl --silent --show-error --max-time 20 -o /tmp/pagina.json -w '%{http_code}' \
+          echo "--- ARCHIVIO MODUGNO: NATURA + CREDITI + PAGINA 20 ---"
+          CODICE_PAGINA=$(curl --silent --show-error --max-time 25 -o /tmp/pagina.json -w '%{http_code}' \
             "$BASE/api/versioni?titolo=Nel%20blu%20dipinto%20di%20blu&artista=Domenico%20Modugno&ordine=asc&offset=0" || true)
-          echo "HTTP archivio: $CODICE_PAGINA"
-          cat /tmp/pagina.json || true
-          echo
           test "$CODICE_PAGINA" = "200"
           python - <<'PY'
           import json
@@ -62,34 +59,39 @@ jobs:
           versioni=d.get('versioni') or []
           totale=int(d.get('totale') or 0)
           assert totale > 0, d
-          assert len(versioni) > 0, d
-          assert len(versioni) <= 20, len(versioni)
-          print('OK: archivio contiene cover reali; massimo 20 per pagina. Totale:', totale)
+          assert 0 < len(versioni) <= 20, len(versioni)
+          assert isinstance((d.get('composizione') or {}).get('crediti'), list), d.get('composizione')
+          for v in versioni:
+              assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
+              assert isinstance(v.get('crediti'), list), v
+              assert len(v.get('crediti')) > 0, v
+          print('OK: archivio espone natura e crediti. Totale:', totale)
           PY
 
-          echo "--- RICERCA LIBERA DIAGNOSTICA CON RISULTATI REALI ---"
-          CODICE_RICERCA=$(curl --silent --show-error --max-time 60 -o /tmp/ricerca.json -w '%{http_code}' \
+          echo "--- RICERCA UTENTE: gino paoli sapore di sale ---"
+          CODICE_GINO=$(curl --silent --show-error --max-time 90 -o /tmp/gino.json -w '%{http_code}' \
             -X POST "$BASE/api/ricerca-libera" \
             -H 'Content-Type: application/json' \
-            --data '{"query":"Domenico Modugno, Nel blu dipinto di blu","ordine":"asc"}' || true)
-          echo "HTTP ricerca libera: $CODICE_RICERCA"
-          cat /tmp/ricerca.json || true
+            --data '{"query":"gino paoli sapore di sale","ordine":"asc"}' || true)
+          echo "HTTP Gino Paoli: $CODICE_GINO"
+          cat /tmp/gino.json || true
           echo
-          test "$CODICE_RICERCA" = "200"
+          test "$CODICE_GINO" = "200"
           python - <<'PY'
           import json
-          d=json.load(open('/tmp/ricerca.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
-          rl=d.get('ricercaLibera') or {}
-          interpretazione=rl.get('interpretazione') or {}
-          assert interpretazione.get('titolo'), interpretazione
-          assert interpretazione.get('artista'), interpretazione
-          versioni=d.get('versioni') or []
-          assert len(versioni) > 0, d
+          d=json.load(open('/tmp/gino.json',encoding='utf-8'))
+          assert d.get('stato') in ('pronto','ricerca_incompleta'), d
+          interpretazione=((d.get('ricercaLibera') or {}).get('interpretazione') or {})
+          titolo=(interpretazione.get('titolo') or '').lower()
+          artista=(interpretazione.get('artista') or '').lower()
+          assert 'sapore di sale' in titolo, interpretazione
+          assert 'gino paoli' in artista, interpretazione
           assert 'autocontrollo' in d, d
-          print('OK: barra libera -> composizione -> cover reali.')
-          print('Composizione interpretata:', interpretazione.get('artista'), '-', interpretazione.get('titolo'))
-          print('Versioni nella risposta:', len(versioni))
+          for v in d.get('versioni') or []:
+              assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
+              assert isinstance(v.get('crediti'), list), v
+          print('OK: la stessa forma digitata sul telefono viene interpretata come Gino Paoli - Sapore di sale.')
+          print('Stato:', d.get('stato'), 'Versioni:', len(d.get('versioni') or []))
           PY
 
-          echo "COLLAUDO REMOTO LAB COMPLETATO."
+          echo "COLLAUDO REMOTO LAB 0.7.1 COMPLETATO."

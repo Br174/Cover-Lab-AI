@@ -1,5 +1,6 @@
 import { creaChiaveRicerca } from '../motore/normalizzazione.js';
 import { leggiSaluteFonti } from './salute-fonti.js';
+import { descriviRegoleFonti, leggiStatoPersistenteLimiti } from '../motore/gestore-limiti-fonti.js';
 
 async function sicuro(fn, ripiego) {
   try { return await fn(); } catch { return ripiego; }
@@ -167,6 +168,24 @@ export async function diagnosticaComposizione(db, titolo, artista = '') {
   }, []);
 
   const saluteProvider = await sicuro(() => leggiSaluteFonti(db), []);
+  const limitiProviderRuntime = await sicuro(() => leggiStatoPersistenteLimiti(db), []);
+  const salutePerId = new Map(saluteProvider.map(x => [String(x.provider), x]));
+  const limitiPerId = new Map(limitiProviderRuntime.map(x => [String(x.provider), x]));
+  const regoleFonti = descriviRegoleFonti().map(regola => {
+    const salute = salutePerId.get(regola.provider) || null;
+    const runtime = limitiPerId.get(regola.provider) || null;
+    const ultimoHttp = Number(runtime?.ultimoHttp ?? salute?.codiceUltimoErrore ?? 0) || null;
+    return {
+      ...regola,
+      statoSalute: salute?.stato || 'non_ancora_interrogato',
+      ultimoHttp,
+      sospesoFino: salute?.sospesoFino || (Number(runtime?.sospesoFinoMs || 0) > Date.now() ? new Date(Number(runtime.sospesoFinoMs)).toISOString() : null),
+      chiamateQuotaFinestra: numerico(runtime?.chiamateFinestra),
+      finestraQuota: runtime?.finestraQuota || null,
+      ultimoAccessoMs: numerico(runtime?.ultimoAccessoMs),
+      richiedeRicontrolloPolicy: [403, 429].includes(ultimoHttp) || false
+    };
+  });
 
   const contributi = new Map();
   const prendi = fonte => {
@@ -211,6 +230,10 @@ export async function diagnosticaComposizione(db, titolo, artista = '') {
     },
     provider: Object.values(riepilogoProvider),
     saluteProvider,
+    gestoreLimitiRegole: {
+      regole: regoleFonti,
+      runtime: limitiProviderRuntime
+    },
     strategie,
     statiCandidati,
     fonti: [...contributi.values()].sort((a,b) => Number(b.haContribuitoAllArchivio)-Number(a.haContribuitoAllArchivio) || b.versioniConfermate-a.versioniConfermate),

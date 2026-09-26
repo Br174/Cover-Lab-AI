@@ -7,18 +7,19 @@ import {
   trovaProviderPerStrategia
 } from '../src/fonti/provider-registry.js';
 
-test('il registro contiene MusicBrainz, YouTube, Apple e Internet Archive', () => {
+test('il registro contiene MusicBrainz, YouTube, Apple, Internet Archive e Wikipedia', () => {
   const providers = elencoProvider({});
   const ids = providers.map(p => p.id);
   assert.ok(ids.includes('musicbrainz'));
   assert.ok(ids.includes('youtube'));
   assert.ok(ids.includes('apple_catalogo'));
   assert.ok(ids.includes('internet_archive'));
+  assert.ok(ids.includes('wikipedia'));
 });
 
 test('solo i provider di scoperta espongono cerca', () => {
   const providers = providerScoperta({});
-  assert.ok(providers.length >= 3);
+  assert.ok(providers.length >= 4);
   for (const provider of providers) {
     assert.ok(provider.capacita.includes(CAPACITA_PROVIDER.SCOPERTA));
     assert.equal(typeof provider.cerca, 'function');
@@ -42,5 +43,11 @@ test('la strategia YouTube resta associata al provider YouTube', () => {
 test('Internet Archive e un provider di scoperta separato', () => {
   const provider = trovaProviderPerStrategia('internet_archive', {});
   assert.equal(provider?.id, 'internet_archive');
+  assert.equal(provider?.stato().disponibile, true);
+});
+
+test('Wikipedia e una fonte di scoperta separata e senza chiave', () => {
+  const provider = trovaProviderPerStrategia('wikipedia', {});
+  assert.equal(provider?.id, 'wikipedia');
   assert.equal(provider?.stato().disponibile, true);
 });

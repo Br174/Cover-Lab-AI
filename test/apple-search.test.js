@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cercaNelCatalogoApple, statoProviderApple } from '../src/fonti/apple-search.js';
 
-function rispostaJson(corpo, stato = 200) {
+function rispostaJson(corpo, stato = 200, headers = {}) {
   return {
     ok: stato >= 200 && stato < 300,
     status: stato,
+    headers: {
+      get(nome) { return headers[String(nome).toLowerCase()] ?? null; }
+    },
     async json() { return corpo; }
   };
 }
@@ -64,10 +67,31 @@ test('Apple normalizza i risultati musicali nel formato interno', async () => {
   });
 });
 
-test('Apple espone lo stato HTTP in caso di errore', async () => {
+test('Apple espone lo stato HTTP in caso di errore non rate-limit', async () => {
   const fetchFn = async () => rispostaJson({}, 503);
   await assert.rejects(
     () => cercaNelCatalogoApple({ query: 'test' }, fetchFn),
     errore => errore?.status === 503 && /503/.test(errore.message)
   );
+});
+
+test('dopo un 429 Apple entra in raffreddamento senza fare nuove richieste di rete', async () => {
+  let chiamate = 0;
+  const fetchFn = async () => {
+    chiamate += 1;
+    return rispostaJson({}, 429, { 'retry-after': '2' });
+  };
+
+  await assert.rejects(
+    () => cercaNelCatalogoApple({ query: 'Sapore di sale' }, fetchFn),
+    errore => errore?.status === 429 && errore?.retryAfterMs >= 1900
+  );
+  assert.equal(chiamate, 1);
+  assert.equal(statoProviderApple().stato, 'limitato_temporaneamente');
+
+  await assert.rejects(
+    () => cercaNelCatalogoApple({ query: 'Sapore di sale cover' }, fetchFn),
+    errore => errore?.status === 429
+  );
+  assert.equal(chiamate, 1, 'durante il raffreddamento non deve interrogare di nuovo Apple');
 });

@@ -1,6 +1,7 @@
 import { cercaSuYouTube, statoProviderYouTube } from './youtube.js';
 import { cercaNelCatalogoApple, statoProviderApple } from './apple-search.js';
 import { cercaSuInternetArchive, statoProviderInternetArchive } from './internet-archive.js';
+import { cercaSuWikipedia, statoProviderWikipedia } from './wikipedia.js';
 
 export const CAPACITA_PROVIDER = Object.freeze({
   SCOPERTA: 'scoperta',
@@ -26,6 +27,49 @@ function descriptorMusicBrainz() {
     gestisceLimitiInternamente: true,
     stato() {
       return { provider: 'musicbrainz', disponibile: true, stato: 'configurato_senza_chiave' };
+    }
+  };
+}
+
+function descriptorWikipedia(env, opzioni = {}) {
+  return {
+    id: 'wikipedia',
+    nome: 'Wikipedia / MediaWiki',
+    priorita: 95,
+    affidabilitaBase: 78,
+    capacita: [CAPACITA_PROVIDER.SCOPERTA],
+    aliasStrategia: ['wikipedia', 'enciclopedia', 'mediawiki'],
+    paginaUnica: true,
+    stato() {
+      return statoProviderWikipedia();
+    },
+    async cerca({ query, titoloOriginale = null, artistaOriginale = null } = {}, controllo = {}) {
+      return cercaSuWikipedia({
+        query,
+        titoloOriginale: titoloOriginale || query,
+        artistaOriginale: artistaOriginale || ''
+      }, opzioni.fetchWikipediaFn || fetch, controllo.signal || null);
+    },
+    preparaCandidato(candidato, elemento) {
+      const tipoFonte = elemento?.tipoProposto || null;
+      return {
+        ...candidato,
+        titolo: candidato.titolo || elemento?.titolo || null,
+        interprete: candidato.interprete || elemento?.interprete || null,
+        anno: candidato.anno || elemento?.anno || annoDaData(elemento?.dataPubblicazione),
+        tipo: (candidato.tipo && candidato.tipo !== 'dubbio') ? candidato.tipo : (tipoFonte || candidato.tipo || 'dubbio'),
+        affidabilita: Math.max(Number(candidato.affidabilita || 0), 78)
+      };
+    },
+    creaFonte(elemento) {
+      return {
+        fonte: 'wikipedia',
+        idEsterno: elemento.idEsterno,
+        indirizzo: elemento.indirizzo,
+        titoloFonte: [elemento.interprete, elemento.titolo].filter(Boolean).join(' — '),
+        descrizione: elemento.descrizione,
+        dataPubblicazione: elemento.dataPubblicazione
+      };
     }
   };
 }
@@ -161,6 +205,7 @@ function descriptorInternetArchive(env, opzioni = {}) {
 export function creaRegistroProvider(env = {}, opzioni = {}) {
   const providers = [
     descriptorMusicBrainz(env, opzioni),
+    descriptorWikipedia(env, opzioni),
     descriptorYouTube(env, opzioni),
     descriptorApple(env, opzioni),
     descriptorInternetArchive(env, opzioni)

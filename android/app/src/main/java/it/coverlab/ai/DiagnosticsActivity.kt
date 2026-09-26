@@ -3,7 +3,6 @@ package it.coverlab.ai
 import android.app.Activity
 import android.graphics.Typeface
 import android.os.Bundle
-import android.view.Gravity
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -98,12 +97,19 @@ class DiagnosticsActivity : Activity() {
         val tracce = regista?.optJSONArray("tracce") ?: JSONArray()
         for (i in 0 until minOf(tracce.length(), 5)) {
             val t = tracce.optJSONObject(i) ?: continue
+            val giro = t.optInt("giro")
+            val agenda = t.optJSONArray("agenda")
+            if (agenda != null && agenda.length() > 0) {
+                riga("Agenda del Regista · giro $giro", listaTesto(agenda, 10))
+            }
             val domande = t.optJSONArray("domandeEsplorate")
             if (domande != null && domande.length() > 0) {
-                riga("Domande giro ${t.optInt("giro")}", listaTesto(domande, 8))
+                riga("Domande dichiarate esplorate · giro $giro", listaTesto(domande, 10))
+            } else if (agenda != null && agenda.length() > 0) {
+                testoSecondario("Giro $giro: l agenda e stata generata, ma il modello non ha dichiarato quali domande ha effettivamente esplorato.")
             }
             val nuove = t.optJSONArray("nuoveDomande")
-            if (nuove != null && nuove.length() > 0) riga("Nuove piste", listaTesto(nuove, 8))
+            if (nuove != null && nuove.length() > 0) riga("Nuove piste", listaTesto(nuove, 10))
         }
 
         sezione("PROVIDER INTERROGATI")

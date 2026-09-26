@@ -10,8 +10,8 @@ android {
         applicationId = "it.coverlab.ai"
         minSdk = 23
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.7.2"
+        versionCode = 10
+        versionName = "0.8.0"
 
         buildConfigField("String", "COVER_LAB_API_BASE", "\"https://DA_CONFIGURARE.workers.dev\"")
     }
@@ -20,12 +20,14 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".lab"
+            // Ogni LAB appartiene a una famiglia Android separata e puo convivere
+            // con le LAB precedenti senza sovrascriverle o contaminarne i dati.
+            applicationIdSuffix = ".lab080"
             versionNameSuffix = "-lab"
             buildConfigField(
                 "String",
                 "COVER_LAB_API_BASE",
-                "\"https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev\""
+                "\"https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev\""
             )
         }
         release { isMinifyEnabled = false }

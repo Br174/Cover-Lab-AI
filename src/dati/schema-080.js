@@ -12,6 +12,65 @@ async function aggiungiColonnaSeManca(db, colonne, nome, definizione) {
   return true;
 }
 
+async function assicuraTabelleCrediti(db) {
+  // Le preview Cloudflare possono trovarsi davanti a una D1 nata prima delle
+  // migrazioni crediti. La LAB 0.8 non deve fallire: crea in modo idempotente
+  // solo le strutture mancanti, senza alterare dati esistenti.
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS crediti_versione (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      versione_id TEXT NOT NULL,
+      ruolo TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      fonte TEXT,
+      id_esterno TEXT,
+      nota TEXT,
+      data_verifica TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(versione_id) REFERENCES versioni(id) ON DELETE CASCADE
+    )
+  `).run();
+  await db.prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crediti_versione_unico
+    ON crediti_versione(versione_id, ruolo, nome, COALESCE(fonte, ''))
+  `).run();
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_crediti_versione_versione
+    ON crediti_versione(versione_id)
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS crediti_composizione (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      composizione_id TEXT NOT NULL,
+      ruolo TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      fonte TEXT,
+      id_esterno TEXT,
+      nota TEXT,
+      data_verifica TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(composizione_id) REFERENCES composizioni(id) ON DELETE CASCADE
+    )
+  `).run();
+  await db.prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crediti_composizione_unici
+    ON crediti_composizione(composizione_id, ruolo, nome)
+  `).run();
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_crediti_composizione_lookup
+    ON crediti_composizione(composizione_id, ruolo)
+  `).run();
+}
+
+async function assicuraConfigurazioneArchivio(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS configurazione_archivio_vivo (
+      chiave TEXT PRIMARY KEY,
+      valore TEXT NOT NULL,
+      aggiornato_il TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+}
+
 async function applica(db) {
   if (!db) return { stato: 'database_non_collegato' };
 
@@ -31,6 +90,9 @@ async function applica(db) {
     CREATE INDEX IF NOT EXISTS idx_versioni_stato_archivio
     ON versioni(composizione_id, stato_archivio, anno)
   `).run();
+
+  await assicuraTabelleCrediti(db);
+  await assicuraConfigurazioneArchivio(db);
 
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS tracce_regista_ai (

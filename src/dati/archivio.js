@@ -1,7 +1,7 @@
 import { creaChiaveRicerca, creaChiaveDuplicato } from '../motore/normalizzazione.js';
 import { valutaAmmissioneArchivio } from '../motore/ammissione-archivio.js';
 import { salvaCreditiComposizione } from './crediti-composizione.js';
-import { salvaCreditiVersione } from './versioni-verificate.js';
+import { salvaCreditiVersione, salvaFontiVersione } from './versioni-verificate.js';
 
 export async function trovaComposizione(db, titolo, artista) {
   if (!db) return null;
@@ -159,6 +159,7 @@ export async function salvaVersioni(db, composizioneId, versioni, creditiComposi
     const versioneId = await idVersioneSalvata(db, composizioneId, versione);
     if (!versioneId) continue;
     await salvaCreditiVersione(db, versioneId, creditiVersione(versione));
+    await salvaFontiVersione(db, versioneId, Array.isArray(versione.fonti) ? versione.fonti : []);
   }
   return { archiviate, inVerifica };
 }

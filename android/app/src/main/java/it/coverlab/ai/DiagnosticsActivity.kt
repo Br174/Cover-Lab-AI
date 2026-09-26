@@ -124,6 +124,23 @@ class DiagnosticsActivity : Activity() {
             )
         }
 
+        sezione("SALUTE MOTORE")
+        val salute = d.optJSONArray("saluteProvider") ?: JSONArray()
+        if (salute.length() == 0) testoSecondario("Nessuno stato di salute provider registrato.")
+        for (i in 0 until salute.length()) {
+            val p = salute.optJSONObject(i) ?: continue
+            val codice = p.opt("codiceUltimoErrore")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            val sospeso = p.optString("sospesoFino").takeIf { it.isNotBlank() && it != "null" }
+            val ultimoErrore = p.optString("ultimoErrore").takeIf { it.isNotBlank() && it != "null" }
+            val dettaglio = buildString {
+                append("errori consecutivi ${p.optInt("erroriConsecutivi")} · chiamate ${p.optInt("chiamateTotali")} · risultati ${p.optInt("risultatiTotali")}")
+                if (codice != null) append(" · HTTP $codice")
+                if (sospeso != null) append("\nsospeso fino a $sospeso")
+                if (ultimoErrore != null) append("\nultimo errore: $ultimoErrore")
+            }
+            riga("${p.optString("provider", "fonte")} · ${p.optString("stato", "sconosciuto")}", dettaglio)
+        }
+
         sezione("FONTI: CHI HA CONTRIBUITO DAVVERO")
         val fonti = d.optJSONArray("fonti") ?: JSONArray()
         if (fonti.length() == 0) testoSecondario("Nessun contributo ancora registrato.")

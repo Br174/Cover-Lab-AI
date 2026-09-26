@@ -57,7 +57,7 @@ export async function cercaSuInternetArchive({
   const opzioniFetch = {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
+      'User-Agent': 'CoverLabAI/0.8.0 (https://github.com/Br174/Cover-Lab-AI)'
     }
   };
   if (signal) opzioniFetch.signal = signal;
@@ -66,6 +66,7 @@ export async function cercaSuInternetArchive({
   if (!risposta.ok) {
     const errore = new Error(`Internet Archive ha risposto ${risposta.status}`);
     errore.status = risposta.status;
+    errore.retryAfter = risposta.headers?.get?.('retry-after') || null;
     throw errore;
   }
 

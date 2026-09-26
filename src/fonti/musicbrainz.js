@@ -1,43 +1,32 @@
-const BASE = 'https://musicbrainz.org/ws/2';
-const ATTESA_MINIMA_MS = 1050;
-const STATI_TRANSITORI = new Set([429, 500, 502, 503, 504]);
-const TENTATIVI_MASSIMI = 3;
-let ultimoAccesso = 0;
+import { eseguiConGestoreLimiti, retryAfterMsDaValore } from '../motore/gestore-limiti-fonti.js';
 
-function dormi(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const BASE = 'https://musicbrainz.org/ws/2';
+const TENTATIVI_MASSIMI = 3;
 
 async function richiesta(url, fetchFn = fetch) {
-  let ultimaRisposta = null;
-
-  for (let tentativo = 1; tentativo <= TENTATIVI_MASSIMI; tentativo += 1) {
-    if (fetchFn === fetch) {
-      const attesa = Math.max(0, ATTESA_MINIMA_MS - (Date.now() - ultimoAccesso));
-      if (attesa) await dormi(attesa);
-      ultimoAccesso = Date.now();
+  const reale = fetchFn === fetch;
+  const gestita = await eseguiConGestoreLimiti({
+    provider: 'musicbrainz',
+    massimoTentativi: TENTATIVI_MASSIMI,
+    chiaveRichiesta: url,
+    cacheTtlMs: reale ? null : 0,
+    ignoraAttese: !reale,
+    operazione: async () => {
+      const risposta = await fetchFn(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'CoverLabAI/0.8.0 (https://github.com/Br174/Cover-Lab-AI)'
+        }
+      });
+      if (risposta.ok) return risposta.json();
+      const errore = new Error(`MusicBrainz ha risposto ${risposta.status || 'senza stato'}`);
+      errore.status = Number(risposta.status) || null;
+      const retryAfter = retryAfterMsDaValore(risposta.headers?.get?.('retry-after'));
+      if (retryAfter != null) errore.retryAfterMs = retryAfter;
+      throw errore;
     }
-
-    const risposta = await fetchFn(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
-      }
-    });
-    ultimaRisposta = risposta;
-
-    if (risposta.ok) return risposta.json();
-
-    const transitorio = STATI_TRANSITORI.has(Number(risposta.status));
-    if (!transitorio || tentativo >= TENTATIVI_MASSIMI) break;
-
-    const retryAfter = Number(risposta.headers?.get?.('retry-after') || 0);
-    const attesaServer = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 0;
-    const attesaProgressiva = ATTESA_MINIMA_MS * tentativo;
-    await dormi(Math.max(ATTESA_MINIMA_MS, attesaServer, attesaProgressiva));
-  }
-
-  throw new Error(`MusicBrainz ha risposto ${ultimaRisposta?.status || 'senza stato'}`);
+  });
+  return gestita.valore;
 }
 
 function normalizzaConfronto(valore) {

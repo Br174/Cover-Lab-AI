@@ -10,6 +10,11 @@ function retryAfterMs(risposta) {
   const valore = risposta?.headers?.get?.('retry-after');
   const secondi = Number(valore || 0);
   if (Number.isFinite(secondi) && secondi > 0) return Math.min(10 * 60 * 1000, secondi * 1000);
+  const data = Date.parse(String(valore || ''));
+  if (Number.isFinite(data)) {
+    const residuo = Math.max(0, data - Date.now());
+    if (residuo > 0) return Math.min(10 * 60 * 1000, residuo);
+  }
   return 60 * 1000;
 }
 
@@ -64,6 +69,7 @@ export async function cercaNelCatalogoApple({
     }
     const errore = new Error(`Apple Search API ha risposto ${risposta.status}`);
     errore.status = risposta.status;
+    errore.retryAfter = risposta.headers?.get?.('retry-after') || null;
     throw errore;
   }
 

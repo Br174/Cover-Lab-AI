@@ -47,6 +47,7 @@ export async function cercaSuYouTube({
     } catch { /* ignora */ }
     const errore = new Error(`YouTube ha risposto ${risposta.status}${dettaglio ? `: ${dettaglio}` : ''}`);
     errore.status = risposta.status;
+    errore.retryAfter = risposta.headers?.get?.('retry-after') || null;
     throw errore;
   }
 

@@ -51,11 +51,13 @@ async function generaNuovePiste(originale, env, db, chiave) {
   }, env);
 
   if (!piano.disponibile) {
+    const strategieNuoveFallback = await salvaStrategieScoperta(db, chiave, piano.strategie || []);
     return {
-      stato: 'ia_non_disponibile',
-      strategieNuove: 0,
+      stato: piano.strategie?.length ? 'fallback_senza_ia' : 'ia_non_disponibile',
+      strategieNuove: strategieNuoveFallback,
       candidatiNuovi: 0,
       agendaDomande: agenda.domande.length,
+      domandeEsplorate: piano.domandeEsplorate || [],
       esaurita: false
     };
   }
@@ -82,13 +84,15 @@ async function generaNuovePiste(originale, env, db, chiave) {
   // la ricerca globale della composizione. I giri successivi cambiano agenda.
   await registraGiroIA(db, chiave, { esaurita: false });
   return {
-    stato: 'ok',
+    stato: piano.recupero ? 'ok_con_fallback' : 'ok',
     strategieNuove,
     candidatiNuovi,
     agendaDomande: agenda.domande.length,
     domandeEsplorate: piano.domandeEsplorate || [],
     nuoveDomande: piano.nuoveDomande || [],
     agendaEsaurita: piano.esaurita === true,
+    recupero: piano.recupero || null,
+    avviso: piano.avviso || null,
     esaurita: false
   };
 }
@@ -111,8 +115,12 @@ async function prossimeStrategiePerProvider(db, chiave, provider, limite) {
 
 function statoStrategiaDopoErrore(esito) {
   const codice = Number(esito?.codiceErrore);
-  if (esito?.stato === 'timeout' || [408, 429, 500, 502, 503, 504].includes(codice)) return 'continua';
-  if (esito?.stato === 'sospeso_circuit_breaker' || esito?.saltato) return 'attesa_provider';
+  const limitato = ['limitato_temporaneamente', 'quota_esaurita', 'sospeso_circuit_breaker'].includes(esito?.stato)
+    || [403, 429].includes(codice)
+    || Boolean(esito?.codiceGestore)
+    || esito?.saltato;
+  if (limitato) return 'attesa_provider';
+  if (esito?.stato === 'timeout' || [408, 425, 500, 502, 503, 504].includes(codice)) return 'continua';
   return 'errore';
 }
 
@@ -186,7 +194,10 @@ async function processaProviderScoperta(originale, env, db, chiave, provider, ma
         errore: pagina.errore || null,
         incrementaPagina: false
       });
-      if (statoStrategia === 'attesa_provider') strategieInAttesa += 1;
+      if (statoStrategia === 'attesa_provider') {
+        strategieInAttesa += 1;
+        break;
+      }
       continue;
     }
 

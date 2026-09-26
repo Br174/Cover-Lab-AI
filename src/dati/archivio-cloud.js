@@ -17,11 +17,18 @@ function paroleRicerca(query = '') {
     .slice(0, 12);
 }
 
+function dataMs(v) {
+  if (!v) return 0;
+  const n = Date.parse(String(v).replace(' ', 'T') + (String(v).includes('Z') ? '' : 'Z'));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export async function statisticheArchivioCloud(db) {
   if (!db) return {
     stato: 'database_non_collegato',
     braniPresenti: 0,
     versioniArchiviate: 0,
+    versioniInVerifica: 0,
     nuoveUltimoAggiornamento: 0,
     ultimoAggiornamento: null
   };
@@ -31,14 +38,14 @@ export async function statisticheArchivioCloud(db) {
     SELECT
       COUNT(DISTINCT CASE WHEN v.stato_archivio='archiviata' THEN c.id END) AS brani,
       SUM(CASE WHEN v.stato_archivio='archiviata' THEN 1 ELSE 0 END) AS versioni,
-      SUM(CASE WHEN v.stato_archivio<>'archiviata' THEN 1 ELSE 0 END) AS in_verifica
+      SUM(CASE WHEN v.stato_archivio IN ('in_verifica','da_rivalidare') THEN 1 ELSE 0 END) AS in_verifica
     FROM composizioni c
     LEFT JOIN versioni v ON v.composizione_id=c.id
   `).first();
 
-  let ultimo = null;
+  let ultimaScansione = null;
   try {
-    ultimo = await db.prepare(`
+    ultimaScansione = await db.prepare(`
       SELECT completata_il AS completataIl, nuove_o_aggiornate AS nuove,
              titolo, artista, stato
       FROM scansioni_archivio_vivo
@@ -47,7 +54,38 @@ export async function statisticheArchivioCloud(db) {
       LIMIT 1
     `).first();
   } catch {
-    ultimo = null;
+    ultimaScansione = null;
+  }
+
+  const ultimaAmmissione = await db.prepare(`
+    SELECT MAX(data_ammissione_archivio) AS data
+    FROM versioni
+    WHERE stato_archivio='archiviata' AND data_ammissione_archivio IS NOT NULL
+  `).first();
+
+  let aggiornamento = ultimaScansione;
+  const dataAmmissione = ultimaAmmissione?.data || null;
+
+  // Se la certificazione 0.8 (o una ricerca manuale) ha ammesso versioni dopo
+  // l'ultima scansione dell'Archivio Vivo, non riutilizziamo i vecchi conteggi
+  // grezzi. Contiamo solo le ammissioni certificate della piu recente finestra.
+  if (dataMs(dataAmmissione) > dataMs(ultimaScansione?.completataIl)) {
+    const riga = await db.prepare(`
+      SELECT COUNT(*) AS nuove,
+             MAX(c.titolo_canonico) AS titolo,
+             MAX(c.artista_originale) AS artista
+      FROM versioni v
+      JOIN composizioni c ON c.id=v.composizione_id
+      WHERE v.stato_archivio='archiviata'
+        AND strftime('%Y-%m-%d %H:%M', v.data_ammissione_archivio)=strftime('%Y-%m-%d %H:%M', ?1)
+    `).bind(dataAmmissione).first();
+    aggiornamento = {
+      completataIl: dataAmmissione,
+      nuove: Number(riga?.nuove || 0),
+      titolo: riga?.titolo || null,
+      artista: riga?.artista || null,
+      stato: 'certificazione_archivio'
+    };
   }
 
   return {
@@ -55,10 +93,11 @@ export async function statisticheArchivioCloud(db) {
     braniPresenti: Number(totali?.brani || 0),
     versioniArchiviate: Number(totali?.versioni || 0),
     versioniInVerifica: Number(totali?.in_verifica || 0),
-    nuoveUltimoAggiornamento: Number(ultimo?.nuove || 0),
-    ultimoAggiornamento: ultimo?.completataIl || null,
-    ultimoBranoAggiornato: ultimo?.titolo || null,
-    ultimoArtistaAggiornato: ultimo?.artista || null
+    nuoveUltimoAggiornamento: Number(aggiornamento?.nuove || 0),
+    ultimoAggiornamento: aggiornamento?.completataIl || null,
+    ultimoBranoAggiornato: aggiornamento?.titolo || null,
+    ultimoArtistaAggiornato: aggiornamento?.artista || null,
+    tipoUltimoAggiornamento: aggiornamento?.stato || null
   };
 }
 

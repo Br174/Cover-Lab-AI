@@ -6,15 +6,6 @@ const STATI_NON_CERTI = new Set([
   'verifica_crediti_insufficiente'
 ]);
 
-const FONTI_FORTI = new Set([
-  'musicbrainz',
-  'wikipedia',
-  'wikimedia',
-  'apple_catalogo',
-  'artista_ufficiale',
-  'etichetta_ufficiale'
-]);
-
 function fontiIndipendenti(fonti = []) {
   return new Set(
     (fonti || [])
@@ -76,7 +67,6 @@ export function valutaAmmissioneArchivio({
     };
   }
 
-  const fonteForte = [...provider].some(p => FONTI_FORTI.has(p));
   const relazioneStrutturata = Boolean(
     verificaStrutturata?.verificato === true ||
     versione.idOperaMusicBrainz ||
@@ -91,12 +81,8 @@ export function valutaAmmissioneArchivio({
   let motivo;
   if (relazioneStrutturata) {
     motivo = 'Relazione con l opera verificata da una fonte strutturata.';
-  } else if (fonteForte) {
-    motivo = 'Versione documentata da una fonte attendibile e verificata dal motore.';
-  } else if (provider.has('youtube')) {
-    motivo = 'Versione documentata da YouTube e confermata dalla verifica intelligente del motore.';
   } else {
-    motivo = `Versione confermata dal motore su ${provider.size} fonte/i reali.`;
+    motivo = `Versione confermata dal motore su ${provider.size} fonte/i reali dopo controllo di coerenza.`;
   }
 
   if (!creditiTotali.length) {
@@ -117,12 +103,12 @@ export function valutaAmmissioneArchivio({
 
 export function descriviRegolaArchivio() {
   return {
-    regola: 'fonte_reale_verifica_e_arricchimento_progressivo',
+    regola: 'fonte_reale_controllo_coerenza_e_arricchimento_progressivo',
     sogliaMinimaAffidabilita: 90,
     originaliConteggiatiComeCover: false,
     creditiMancantiBloccanoArchivio: false,
-    fontiForti: [...FONTI_FORTI],
-    youtube: 'ammissibile_dopo_verifica_intelligente',
+    fonteSingola: 'ammissibile_dopo_controllo_coerenza_ai',
+    relazioneStrutturata: 'ammissibile_senza_seconda_fonte',
     creditiAI: 'ammessi_come_arricchimento_rivalidabile',
     candidatiNonAmmessi: 'solo_senza_fonte_reale_o_con_relazione_ancora_dubbia'
   };

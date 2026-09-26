@@ -20,7 +20,7 @@ jobs:
           set -euo pipefail
           BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
 
-          echo "Attendo che Cloudflare pubblichi la LAB 0.8.0..."
+          echo "Collaudo finale LAB 0.8.0: attendo il deploy Cloudflare della revisione corrente..."
           sleep 30
           PRONTO=0
           for TENTATIVO in $(seq 1 120); do

@@ -23,9 +23,7 @@ function creditiComposizioneDaRiga(composizione = {}) {
 export async function leggiConfigurazioneArchivioVivo(db) {
   if (!db) return {};
   try {
-    const risultato = await db.prepare(
-      'SELECT chiave, valore FROM configurazione_archivio_vivo'
-    ).all();
+    const risultato = await db.prepare('SELECT chiave, valore FROM configurazione_archivio_vivo').all();
     return Object.fromEntries((risultato.results || []).map(r => [r.chiave, r.valore]));
   } catch (e) {
     if (String(e?.message || '').includes('no such table')) return {};
@@ -82,8 +80,7 @@ export async function prossimeVociArchivioVivo(db, limite = 1) {
   if (!db) return [];
   const quantita = interoPositivo(limite, 1, 10);
   const risultato = await db.prepare(`
-    SELECT *
-    FROM coda_archivio_vivo
+    SELECT * FROM coda_archivio_vivo
     WHERE stato IN ('in_attesa', 'da_ricontrollare', 'errore')
       AND datetime(prossima_esecuzione) <= datetime('now')
     ORDER BY priorita DESC,
@@ -134,7 +131,7 @@ export async function contaVersioniArchiviate(db, titolo, artista = '') {
   const riga = await db.prepare(`
     SELECT COUNT(v.id) AS totale
     FROM composizioni c
-    LEFT JOIN versioni v ON v.composizione_id = c.id
+    LEFT JOIN versioni v ON v.composizione_id = c.id AND v.stato_archivio='archiviata'
     WHERE c.chiave_ricerca=?1
   `).bind(chiave).first();
   return Number(riga?.totale || 0);
@@ -181,30 +178,32 @@ export async function paginaVersioniArchiviate(db, {
   const quantita = Math.min(20, interoPositivo(limite, 20, 20));
   const direzione = String(ordine).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
 
-  const conteggio = await db.prepare(
-    'SELECT COUNT(*) AS totale FROM versioni WHERE composizione_id=?1'
-  ).bind(composizione.id).first();
+  const conteggio = await db.prepare(`
+    SELECT
+      SUM(CASE WHEN stato_archivio='archiviata' THEN 1 ELSE 0 END) AS totale,
+      SUM(CASE WHEN stato_archivio<>'archiviata' THEN 1 ELSE 0 END) AS in_verifica
+    FROM versioni WHERE composizione_id=?1
+  `).bind(composizione.id).first();
 
   const risultato = await db.prepare(`
     SELECT id, titolo, interprete, anno, lingua, paese, tipo, affidabilita,
            id_musicbrainz AS idMusicBrainz, stato_verifica AS statoVerifica,
            id_opera_musicbrainz AS idOperaMusicBrainz,
            titolo_opera AS titoloOpera,
-           derivazione, derivazione_tradotta AS derivazioneTradotta
+           derivazione, derivazione_tradotta AS derivazioneTradotta,
+           stato_archivio AS statoArchivio, motivo_archivio AS motivoArchivio
     FROM versioni
-    WHERE composizione_id=?1
+    WHERE composizione_id=?1 AND stato_archivio='archiviata'
     ORDER BY CASE WHEN anno IS NULL THEN 1 ELSE 0 END,
              anno ${direzione}, interprete COLLATE NOCASE
     LIMIT ?2 OFFSET ?3
   `).bind(composizione.id, quantita, posizione).all();
 
   const totale = Number(conteggio?.totale || 0);
-  const versioniBase = risultato.results || [];
+  const versioniBase = (risultato.results || []).map(v => ({ ...v, provenienzaRisultato: 'archivio' }));
   const versioni = await aggiungiFontiECrediti(db, versioniBase);
   const creditiPersistiti = await leggiCreditiComposizione(db, composizione.id);
-  const prossimoOffset = posizione + versioni.length < totale
-    ? posizione + versioni.length
-    : null;
+  const prossimoOffset = posizione + versioni.length < totale ? posizione + versioni.length : null;
 
   return {
     stato: 'pronto',
@@ -219,10 +218,12 @@ export async function paginaVersioniArchiviate(db, {
       idMusicBrainz: composizione.id_musicbrainz
     },
     totale,
+    inVerifica: Number(conteggio?.in_verifica || 0),
     offset: posizione,
     limite: quantita,
     prossimoOffset,
     haAltriRisultati: prossimoOffset !== null,
+    conteggioProvenienza: { archivio: versioni.length, ricerca: 0 },
     versioni
   };
 }

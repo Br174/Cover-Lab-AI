@@ -1,4 +1,5 @@
 import { applicaPolicyMusicLab } from '../motore/policy-fonti-media.js';
+import { applicaNaturaVersione } from '../motore/natura-versione.js';
 import { leggiConflittiVersioni } from './conflitti-versione.js';
 
 function raggruppa(righe = []) {
@@ -25,13 +26,38 @@ function completaStatoQualita(versione, conflitti = []) {
   };
 }
 
+function completaCrediti(versione = {}) {
+  const crediti = Array.isArray(versione.crediti) ? [...versione.crediti] : [];
+  const interprete = String(versione.interprete || '').trim();
+  if (interprete && !crediti.some(c => String(c?.ruolo || '').toLowerCase() === 'interprete' && String(c?.nome || '').trim() === interprete)) {
+    crediti.unshift({
+      ruolo: 'interprete',
+      nome: interprete,
+      fonte: versione.idMusicBrainz ? 'musicbrainz' : null,
+      idEsterno: versione.idMusicBrainz || null,
+      nota: 'Credito base derivato dall identita della versione.'
+    });
+  }
+  return { ...versione, crediti };
+}
+
+function completaVersione(versione, conflitti = []) {
+  return applicaPolicyMusicLab(
+    applicaNaturaVersione(
+      completaCrediti(
+        completaStatoQualita(versione, conflitti)
+      )
+    )
+  );
+}
+
 export async function aggiungiFontiECrediti(db, versioni = []) {
   if (!db || !versioni.length) {
-    return versioni.map(v => applicaPolicyMusicLab(completaStatoQualita(v, [])));
+    return versioni.map(v => completaVersione(v, []));
   }
   const ids = versioni.map(v => v.id).filter(Boolean);
   if (!ids.length) {
-    return versioni.map(v => applicaPolicyMusicLab(completaStatoQualita(v, [])));
+    return versioni.map(v => completaVersione(v, []));
   }
   const segnaposto = ids.map((_, i) => `?${i + 1}`).join(',');
 
@@ -66,9 +92,9 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
   const creditiPerVersione = raggruppa(crediti);
   const conflittiPerVersione = raggruppa(conflitti);
 
-  return versioni.map(versione => applicaPolicyMusicLab(completaStatoQualita({
+  return versioni.map(versione => completaVersione({
     ...versione,
     fonti: (fontiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto),
     crediti: (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
-  }, (conflittiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto))));
+  }, (conflittiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)));
 }

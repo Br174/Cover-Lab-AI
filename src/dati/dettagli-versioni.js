@@ -26,8 +26,26 @@ function completaStatoQualita(versione, conflitti = []) {
   };
 }
 
+function creditiUnici(...elenchi) {
+  const visti = new Set();
+  const risultato = [];
+  for (const credito of elenchi.flat()) {
+    const ruolo = String(credito?.ruolo || '').trim();
+    const nome = String(credito?.nome || '').trim();
+    if (!ruolo || !nome) continue;
+    const chiave = `${ruolo.toLowerCase()}::${nome.toLowerCase()}`;
+    if (visti.has(chiave)) continue;
+    visti.add(chiave);
+    risultato.push(credito);
+  }
+  return risultato;
+}
+
 function completaCrediti(versione = {}) {
-  const crediti = Array.isArray(versione.crediti) ? [...versione.crediti] : [];
+  const crediti = creditiUnici(
+    Array.isArray(versione.crediti) ? versione.crediti : [],
+    Array.isArray(versione.creditiOpera) ? versione.creditiOpera : []
+  );
   const interprete = String(versione.interprete || '').trim();
   if (interprete && !crediti.some(c => String(c?.ruolo || '').toLowerCase() === 'interprete' && String(c?.nome || '').trim() === interprete)) {
     crediti.unshift({
@@ -94,7 +112,14 @@ export async function aggiungiFontiECrediti(db, versioni = []) {
 
   return versioni.map(versione => completaVersione({
     ...versione,
-    fonti: (fontiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto),
-    crediti: (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
+    fonti: [
+      ...(Array.isArray(versione.fonti) ? versione.fonti : []),
+      ...(fontiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
+    ],
+    crediti: creditiUnici(
+      Array.isArray(versione.crediti) ? versione.crediti : [],
+      Array.isArray(versione.creditiOpera) ? versione.creditiOpera : [],
+      (creditiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)
+    )
   }, (conflittiPerVersione.get(versione.id) || []).map(({ versione_id, ...resto }) => resto)));
 }

@@ -4,9 +4,36 @@ import { valutaProveCandidato } from '../src/motore/verifica-candidati.js';
 import { verificaCandidatoSuMusicBrainz } from '../src/fonti/musicbrainz-verifica.js';
 
 test('un candidato proposto solo dalla IA non viene promosso', () => {
-  const esito = valutaProveCandidato({ affidabilita_proposta: 80 }, [], null, 90);
+  const esito = valutaProveCandidato({ affidabilita_proposta: 80 }, [], null, 90, { confermato: true, affidabilita: 99 });
   assert.equal(esito.promosso, false);
   assert.ok(esito.affidabilita < 90);
+});
+
+test('una fonte forte come Wikipedia puo bastare se il candidato e coerente', () => {
+  const esito = valutaProveCandidato(
+    { affidabilita_proposta: 68 },
+    [{ fonte: 'wikipedia' }],
+    null,
+    90
+  );
+  assert.equal(esito.promosso, true);
+  assert.equal(esito.metodo, 'fonte_affidabile');
+  assert.ok(esito.affidabilita >= 90);
+});
+
+test('YouTube da solo richiede la conferma AI', () => {
+  const candidato = { affidabilita_proposta: 72 };
+  const senzaAI = valutaProveCandidato(candidato, [{ fonte: 'youtube' }], null, 90, null);
+  assert.equal(senzaAI.promosso, false);
+
+  const conAI = valutaProveCandidato(candidato, [{ fonte: 'youtube' }], null, 90, {
+    confermato: true,
+    affidabilita: 86,
+    motivo: 'Il video e coerente con una cover della composizione.'
+  });
+  assert.equal(conAI.promosso, true);
+  assert.equal(conAI.metodo, 'youtube_verificato_ai');
+  assert.ok(conAI.affidabilita >= 90);
 });
 
 test('due fonti indipendenti possono superare la soglia senza contare duplicati della stessa piattaforma', () => {

@@ -1,0 +1,40 @@
+name: LAB 0.8 - Diagnosi candidati
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'lab/archive-diagnostics-080'
+    paths:
+      - '.github/workflows/lab-diagnosi-candidati-080.yml'
+
+jobs:
+  diagnosi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leggi candidati e motivi dal preview LAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
+          sleep 30
+          curl --silent --show-error --max-time 40 \
+            "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli" \
+            -o /tmp/diag.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/diag.json',encoding='utf-8'))
+          print('ARCHIVIO',d.get('archivio'))
+          print('STATI CANDIDATI',d.get('statiCandidati'))
+          print('FONTI',d.get('fonti'))
+          print('SALUTE',d.get('saluteProvider'))
+          print('\nULTIME TRACCE REGISTA')
+          for t in (d.get('registaAI') or {}).get('tracce') or []:
+              print(json.dumps(t,ensure_ascii=False))
+          print('\nULTIME STRATEGIE')
+          for s in (d.get('strategie') or [])[:50]:
+              print(json.dumps(s,ensure_ascii=False))
+          print('\nPROVE CANDIDATI/ARCHIVIO')
+          for p in d.get('prove') or []:
+              print(json.dumps(p,ensure_ascii=False))
+          PY

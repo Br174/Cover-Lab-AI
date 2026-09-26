@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generaPianoScopertaConIA, interpretaRisultatiSorgenteConIA } from '../src/fonti/ia-scoperta.js';
+import {
+  generaPianoScopertaConIA,
+  interpretaRisultatiSorgenteConIA,
+  estraiCandidatiDeterministici
+} from '../src/fonti/ia-scoperta.js';
 
 test('l IA genera strategie multi-fonte e mantiene i candidati come ipotesi', async () => {
   const env = {
@@ -93,6 +97,29 @@ test('la AI riceve prima una agenda di autointerrogazione e genera piste da conf
   assert.equal(piano.esaurita, true, 'esaurita vale solo per la singola agenda e sara interpretata dall orchestratore');
 });
 
+test('il parser del Regista recupera anche JSON racchiuso in blocchi markdown', async () => {
+  const env = {
+    MODELLO_CLASSIFICAZIONE: 'modello-test',
+    AI: {
+      async run() {
+        return {
+          response: '```json\n{"domandeEsplorate":["italia"],"strategie":[{"provider":"cataloghi","query":"Sapore di sale cover italiana","priorita":90}],"candidati":[{"titolo":"Sapore di sale","interprete":"Artista Z","tipo":"cover","affidabilita":60}],"nuoveDomande":["Esiste una pubblicazione su album?"],"esaurita":false}\n```'
+        };
+      }
+    }
+  };
+
+  const piano = await generaPianoScopertaConIA({
+    titolo: 'Sapore di sale', artista: 'Gino Paoli',
+    agenda: { domande: [{ id: 'italia', domanda: 'Quali cover italiane?', obiettivo: 'Italia' }] }
+  }, env);
+
+  assert.equal(piano.errore, undefined);
+  assert.equal(piano.strategie.length, 1);
+  assert.equal(piano.candidati[0].interprete, 'Artista Z');
+  assert.deepEqual(piano.domandeEsplorate, ['italia']);
+});
+
 test('l IA filtra i risultati di una sorgente senza certificare automaticamente', async () => {
   const env = {
     MODELLO_CLASSIFICAZIONE: 'modello-test',
@@ -128,4 +155,32 @@ test('l IA filtra i risultati di una sorgente senza certificare automaticamente'
   assert.equal(risultati[0].indice, 0);
   assert.equal(risultati[0].interprete, 'Artista Cover');
   assert.equal(risultati[0].affidabilita, 85, 'anche il filtro di sorgente resta candidato da verificare');
+});
+
+test('il fallback deterministico crea solo una pista quando titolo coincide e interprete e diverso', async () => {
+  const elementi = [
+    {
+      titolo: 'Sapore di sale', interprete: 'Jimmy Fontana',
+      dataPubblicazione: '2001-01-01', idEsterno: 'a1'
+    },
+    {
+      titolo: 'Sapore di sale', interprete: 'Gino Paoli',
+      dataPubblicazione: '1964-01-01', idEsterno: 'a2'
+    },
+    { titolo: 'Un altro brano', interprete: 'Altro', idEsterno: 'a3' }
+  ];
+
+  const diretto = estraiCandidatiDeterministici(
+    { titolo: 'Sapore di sale', artista: 'Gino Paoli' }, elementi
+  );
+  assert.equal(diretto.length, 1);
+  assert.equal(diretto[0].interprete, 'Jimmy Fontana');
+  assert.equal(diretto[0].tipo, 'dubbio');
+  assert.ok(diretto[0].affidabilita < 90);
+
+  const viaFiltro = await interpretaRisultatiSorgenteConIA(
+    { titolo: 'Sapore di sale', artista: 'Gino Paoli' }, elementi, {}
+  );
+  assert.equal(viaFiltro.length, 1);
+  assert.equal(viaFiltro[0].origineDeterministica, true);
 });

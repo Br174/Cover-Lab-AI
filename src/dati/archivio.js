@@ -1,4 +1,5 @@
 import { creaChiaveRicerca, creaChiaveDuplicato } from '../motore/normalizzazione.js';
+import { valutaAmmissioneArchivio } from '../motore/ammissione-archivio.js';
 import { salvaCreditiComposizione } from './crediti-composizione.js';
 import { salvaCreditiVersione } from './versioni-verificate.js';
 
@@ -96,46 +97,70 @@ function creditiVersione(versione = {}) {
   });
 }
 
-export async function salvaVersioni(db, composizioneId, versioni) {
-  if (!db || !versioni.length) return;
-  const istruzioni = versioni.map(v => db.prepare(`
-    INSERT INTO versioni (
-      id, composizione_id, titolo, interprete, anno, lingua, paese, tipo,
-      affidabilita, id_musicbrainz, chiave_duplicato, stato_verifica,
-      id_opera_musicbrainz, titolo_opera, derivazione, derivazione_tradotta,
-      data_ultima_verifica
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, CURRENT_TIMESTAMP)
-    ON CONFLICT(composizione_id, id_musicbrainz) WHERE id_musicbrainz IS NOT NULL
-    DO UPDATE SET
-      titolo=excluded.titolo,
-      interprete=excluded.interprete,
-      anno=COALESCE(excluded.anno, versioni.anno),
-      lingua=COALESCE(excluded.lingua, versioni.lingua),
-      paese=COALESCE(excluded.paese, versioni.paese),
-      tipo=excluded.tipo,
-      affidabilita=MAX(versioni.affidabilita, excluded.affidabilita),
-      stato_verifica=excluded.stato_verifica,
-      id_opera_musicbrainz=COALESCE(excluded.id_opera_musicbrainz, versioni.id_opera_musicbrainz),
-      titolo_opera=COALESCE(excluded.titolo_opera, versioni.titolo_opera),
-      derivazione=MAX(versioni.derivazione, excluded.derivazione),
-      derivazione_tradotta=MAX(versioni.derivazione_tradotta, excluded.derivazione_tradotta),
-      data_ultima_verifica=CURRENT_TIMESTAMP
-  `).bind(
-    v.id || crypto.randomUUID(), composizioneId, v.titolo, v.interprete, v.anno,
-    v.lingua, v.paese, v.tipo, v.affidabilita, v.idMusicBrainz,
-    creaChiaveDuplicato(v), v.statoVerifica || 'verificato_metadati',
-    v.idOperaMusicBrainz || null, v.titoloOpera || null,
-    v.derivazione ? 1 : 0, v.derivazioneTradotta ? 1 : 0
-  ));
+export async function salvaVersioni(db, composizioneId, versioni, creditiComposizione = []) {
+  if (!db || !versioni.length) return { archiviate: 0, inVerifica: 0 };
+
+  let archiviate = 0;
+  let inVerifica = 0;
+  const istruzioni = versioni.map(v => {
+    const crediti = creditiVersione(v);
+    const ammissione = valutaAmmissioneArchivio({
+      versione: v,
+      creditiVersione: crediti,
+      creditiComposizione,
+      fonti: v.fonti || []
+    });
+    v.statoArchivio = ammissione.statoArchivio;
+    v.motivoArchivio = ammissione.motivo;
+    v.provenienzaRisultato = 'ricerca';
+    if (ammissione.ammessa) archiviate += 1;
+    else inVerifica += 1;
+
+    return db.prepare(`
+      INSERT INTO versioni (
+        id, composizione_id, titolo, interprete, anno, lingua, paese, tipo,
+        affidabilita, id_musicbrainz, chiave_duplicato, stato_verifica,
+        id_opera_musicbrainz, titolo_opera, derivazione, derivazione_tradotta,
+        stato_archivio, motivo_archivio, data_ammissione_archivio,
+        data_ultima_verifica
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+        CASE WHEN ?17='archiviata' THEN CURRENT_TIMESTAMP ELSE NULL END,
+        CURRENT_TIMESTAMP)
+      ON CONFLICT(composizione_id, id_musicbrainz) WHERE id_musicbrainz IS NOT NULL
+      DO UPDATE SET
+        titolo=excluded.titolo,
+        interprete=excluded.interprete,
+        anno=COALESCE(excluded.anno, versioni.anno),
+        lingua=COALESCE(excluded.lingua, versioni.lingua),
+        paese=COALESCE(excluded.paese, versioni.paese),
+        tipo=excluded.tipo,
+        affidabilita=MAX(versioni.affidabilita, excluded.affidabilita),
+        stato_verifica=excluded.stato_verifica,
+        id_opera_musicbrainz=COALESCE(excluded.id_opera_musicbrainz, versioni.id_opera_musicbrainz),
+        titolo_opera=COALESCE(excluded.titolo_opera, versioni.titolo_opera),
+        derivazione=MAX(versioni.derivazione, excluded.derivazione),
+        derivazione_tradotta=MAX(versioni.derivazione_tradotta, excluded.derivazione_tradotta),
+        stato_archivio=CASE WHEN excluded.stato_archivio='archiviata' THEN 'archiviata' ELSE versioni.stato_archivio END,
+        motivo_archivio=CASE WHEN excluded.stato_archivio='archiviata' THEN excluded.motivo_archivio ELSE versioni.motivo_archivio END,
+        data_ammissione_archivio=CASE WHEN excluded.stato_archivio='archiviata' THEN COALESCE(versioni.data_ammissione_archivio, CURRENT_TIMESTAMP) ELSE versioni.data_ammissione_archivio END,
+        data_ultima_verifica=CURRENT_TIMESTAMP
+    `).bind(
+      v.id || crypto.randomUUID(), composizioneId, v.titolo, v.interprete, v.anno,
+      v.lingua, v.paese, v.tipo, v.affidabilita, v.idMusicBrainz,
+      creaChiaveDuplicato(v), v.statoVerifica || 'verificato_metadati',
+      v.idOperaMusicBrainz || null, v.titoloOpera || null,
+      v.derivazione ? 1 : 0, v.derivazioneTradotta ? 1 : 0,
+      ammissione.statoArchivio, ammissione.motivo
+    );
+  });
   await db.batch(istruzioni);
 
-  // I crediti non restano piu soltanto nel risultato del provider: vengono
-  // agganciati alla versione archiviata e sono disponibili nelle ricerche future.
   for (const versione of versioni) {
     const versioneId = await idVersioneSalvata(db, composizioneId, versione);
     if (!versioneId) continue;
     await salvaCreditiVersione(db, versioneId, creditiVersione(versione));
   }
+  return { archiviate, inVerifica };
 }
 
 export async function caricaVersioni(db, composizioneId, ordine = 'asc') {
@@ -145,12 +170,13 @@ export async function caricaVersioni(db, composizioneId, ordine = 'asc') {
     SELECT id, titolo, interprete, anno, lingua, paese, tipo, affidabilita,
            id_musicbrainz AS idMusicBrainz, stato_verifica AS statoVerifica,
            id_opera_musicbrainz AS idOperaMusicBrainz, titolo_opera AS titoloOpera,
-           derivazione, derivazione_tradotta AS derivazioneTradotta
+           derivazione, derivazione_tradotta AS derivazioneTradotta,
+           stato_archivio AS statoArchivio, motivo_archivio AS motivoArchivio
     FROM versioni
-    WHERE composizione_id = ?1
+    WHERE composizione_id = ?1 AND stato_archivio='archiviata'
     ORDER BY CASE WHEN anno IS NULL THEN 1 ELSE 0 END, anno ${direzione}, interprete COLLATE NOCASE
   `).bind(composizioneId).all();
-  return risultato.results || [];
+  return (risultato.results || []).map(v => ({ ...v, provenienzaRisultato: 'archivio' }));
 }
 
 export async function registraRicerca(db, dati) {

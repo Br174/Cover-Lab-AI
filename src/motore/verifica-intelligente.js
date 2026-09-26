@@ -3,6 +3,11 @@ const TIPI_AMMESSI = new Set([
   'originale', 'duplicato', 'non correlato', 'dubbio'
 ]);
 
+const RUOLI_CREDITO_AMMESSI = new Set([
+  'compositore', 'paroliere', 'autore', 'coautore', 'adattatore',
+  'traduttore', 'autore_nuovo_testo', 'arrangiatore', 'produttore'
+]);
+
 function limita(n, min = 0, max = 100) {
   const v = Number(n);
   if (!Number.isFinite(v)) return min;
@@ -20,6 +25,101 @@ function leggiRisposta(raw) {
     try { return JSON.parse(contenuto); } catch { /* ignora */ }
   }
   return null;
+}
+
+function normalizzaCreditiAI(crediti = []) {
+  const risultato = [];
+  const visti = new Set();
+  for (const c of Array.isArray(crediti) ? crediti : []) {
+    const ruolo = String(c?.ruolo || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const nome = String(c?.nome || '').trim();
+    if (!nome || !RUOLI_CREDITO_AMMESSI.has(ruolo)) continue;
+    const chiave = `${ruolo}::${nome.toLocaleLowerCase('it')}`;
+    if (visti.has(chiave)) continue;
+    visti.add(chiave);
+    risultato.push({
+      ruolo,
+      nome,
+      fonte: 'ai_arricchimento',
+      nota: 'Credito aggiunto dalla verifica AI; da rivalidare con una fonte esterna quando disponibile.'
+    });
+  }
+  return risultato;
+}
+
+export async function verificaCandidatoConIA({ candidato, originale, fonti = [], creditiOriginale = [] }, env) {
+  if (!env?.AI?.run || !candidato?.titolo || !candidato?.interprete || !fonti.length) {
+    return { disponibile: false, confermato: false, crediti: [] };
+  }
+
+  const fontiSintesi = fonti.slice(0, 8).map(f => ({
+    fonte: f.fonte || null,
+    titolo: f.titoloFonte || null,
+    descrizione: f.descrizione || null,
+    data: f.dataPubblicazione || null,
+    id: f.idEsterno || null
+  }));
+
+  const messaggi = [
+    {
+      role: 'system',
+      content: [
+        'Sei il verificatore musicale di Cover Lab AI.',
+        'Esiste gia almeno una fonte reale: non devi inventare l esistenza della cover.',
+        'Valuta se i dati della fonte sono coerenti con la composizione originale e con una vera cover, adattamento o performance della stessa opera.',
+        'Puoi usare la tua conoscenza musicale interna per completare crediti mancanti, ma questi crediti saranno marcati come arricchimento AI e potranno essere rivalidati in seguito.',
+        'Non confermare se sembra un brano omonimo, un upload ingannevole o un opera diversa.',
+        'Rispondi esclusivamente JSON con: confermato, tipo, affidabilita, motivo, crediti[].'
+      ].join(' ')
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        originale,
+        candidato: {
+          titolo: candidato.titolo,
+          interprete: candidato.interprete,
+          anno: candidato.anno || null,
+          lingua: candidato.lingua || null,
+          tipoProposto: candidato.tipo_proposto || candidato.tipo || null,
+          affidabilitaProposta: candidato.affidabilita_proposta || candidato.affidabilita || 0
+        },
+        fonti: fontiSintesi,
+        creditiOriginale: (creditiOriginale || []).slice(0, 20)
+      })
+    }
+  ];
+
+  try {
+    const raw = await env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
+      messages: messaggi,
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      max_completion_tokens: 1000
+    });
+    const dati = leggiRisposta(raw);
+    if (!dati || typeof dati !== 'object') {
+      return { disponibile: true, confermato: false, errore: 'RISPOSTA_AI_NON_INTERPRETABILE', crediti: [] };
+    }
+    const tipo = String(dati.tipo || candidato.tipo_proposto || 'cover').trim().toLowerCase();
+    const affidabilita = limita(dati.affidabilita, 0, 100);
+    const confermato = dati.confermato === true && TIPI_AMMESSI.has(tipo) && !['originale', 'duplicato', 'non correlato', 'dubbio'].includes(tipo);
+    return {
+      disponibile: true,
+      confermato,
+      tipo: TIPI_AMMESSI.has(tipo) ? tipo : 'dubbio',
+      affidabilita,
+      motivo: String(dati.motivo || 'Verifica AI su fonte reale.').slice(0, 500),
+      crediti: normalizzaCreditiAI(dati.crediti)
+    };
+  } catch (e) {
+    return {
+      disponibile: true,
+      confermato: false,
+      errore: String(e?.message || 'Errore verifica AI').slice(0, 500),
+      crediti: []
+    };
+  }
 }
 
 export async function verificaCandidatiConIA(versioni, originale, env, massimo = 12) {

@@ -14,19 +14,13 @@ export function classificaNaturaVersione(versione = {}) {
   const haMusicBrainz = Boolean(versione.idMusicBrainz) || sorgenti.has('musicbrainz');
   const haAnno = Number.isInteger(Number(versione.anno)) && Number(versione.anno) > 1800;
 
-  if (tipo === 'live') {
-    return {
-      categoria: 'performance_registrata',
-      etichetta: 'Performance registrata',
-      affidabilita: 96,
-      motivo: 'La versione e classificata come esecuzione live.'
-    };
-  }
-
+  // Tipo e natura sono assi diversi: una versione live puo anche essere stata
+  // pubblicata ufficialmente su un album. Le prove di pubblicazione hanno quindi
+  // precedenza sul semplice tipo "live".
   if (haApple) {
     return {
       categoria: 'incisione_pubblicata',
-      etichetta: 'Incisione / pubblicazione',
+      etichetta: tipo === 'live' ? 'Pubblicazione discografica live' : 'Incisione / pubblicazione',
       affidabilita: 98,
       motivo: 'La versione compare in un catalogo discografico strutturato.'
     };
@@ -35,9 +29,18 @@ export function classificaNaturaVersione(versione = {}) {
   if (haMusicBrainz && haAnno && !['dubbio', 'karaoke'].includes(tipo)) {
     return {
       categoria: 'incisione_pubblicata',
-      etichetta: 'Incisione / pubblicazione',
+      etichetta: tipo === 'live' ? 'Registrazione live pubblicata/catalogata' : 'Incisione / pubblicazione catalogata',
       affidabilita: 88,
-      motivo: 'Registrazione strutturata con data di pubblicazione/registrazione disponibile.'
+      motivo: 'Esiste una registrazione strutturata collegata alla composizione con data di prima pubblicazione/registrazione.'
+    };
+  }
+
+  if (tipo === 'live') {
+    return {
+      categoria: 'performance_registrata',
+      etichetta: 'Performance registrata',
+      affidabilita: 94,
+      motivo: 'E una esecuzione live e non sono ancora disponibili prove di una pubblicazione discografica.'
     };
   }
 

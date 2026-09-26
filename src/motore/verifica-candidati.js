@@ -58,17 +58,32 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
     };
   }
 
+  // Regola centrale CoverLab: se il primo filtro AI ha gia riconosciuto come
+  // coerente una registrazione trovata su una fonte reale, non serve una seconda
+  // fonte obbligatoria. La fonte prova l esistenza; il punteggio >=70 rappresenta
+  // il controllo di relazione con la composizione, non una semplice memoria AI.
+  if (providerIndipendenti.size >= 1 && base >= 70) {
+    return {
+      promosso: true,
+      affidabilita: Math.max(soglia, Math.min(96, base + 20)),
+      motivo: 'Registrazione trovata su una fonte reale e riconosciuta come coerente con la composizione.',
+      metodo: 'fonte_reale_coerente_ai'
+    };
+  }
+
+  // Una fonte debole o un risultato deterministico ambiguo puo ancora essere
+  // chiarito da un controllo AI supplementare sulla stessa evidenza reale.
   if (providerIndipendenti.size >= 1 && verificaAI?.confermato === true && Number(verificaAI.affidabilita || 0) >= 70) {
     return {
       promosso: true,
       affidabilita: Math.max(soglia, Math.min(96, Math.max(base, Number(verificaAI.affidabilita || 0)) + 5)),
-      motivo: verificaAI.motivo || 'Fonte reale confermata dalla verifica intelligente.',
-      metodo: providerIndipendenti.has('youtube') ? 'youtube_verificato_ai' : 'fonte_reale_verificata_ai'
+      motivo: verificaAI.motivo || 'Fonte reale chiarita dalla verifica intelligente supplementare.',
+      metodo: 'fonte_reale_verificata_ai'
     };
   }
 
-  if (providerIndipendenti.size >= 2 && base >= 70) {
-    const affidabilita = Math.min(96, base + 15 + Math.min(6, (providerIndipendenti.size - 2) * 3));
+  if (providerIndipendenti.size >= 2 && base >= 60) {
+    const affidabilita = Math.min(96, base + 20 + Math.min(6, (providerIndipendenti.size - 2) * 3));
     if (affidabilita >= soglia) {
       return {
         promosso: true,
@@ -83,28 +98,31 @@ export function valutaProveCandidato(candidato, fonti = [], verificaStrutturata 
     promosso: false,
     affidabilita: Math.min(89, Math.max(base, providerIndipendenti.size * 15, Number(verificaAI?.affidabilita || 0))),
     motivo: providerIndipendenti.size
-      ? 'La fonte reale esiste, ma la relazione con la composizione richiede ancora una verifica sufficiente.'
-      : 'Candidato ancora privo di una fonte reale sufficiente.',
+      ? 'La fonte reale esiste, ma la relazione con la composizione e ancora troppo ambigua.'
+      : 'Candidato ancora privo di una fonte reale.',
     metodo: 'in_attesa'
   };
 }
 
 function versioneDaCandidato(candidato, affidabilita, verificaAI = null, metodo = 'conferma_multifonte') {
+  const tipoAI = verificaAI?.confermato ? verificaAI.tipo : null;
   return {
     titolo: candidato.titolo,
     interprete: candidato.interprete,
     anno: candidato.anno,
     lingua: candidato.lingua,
     paese: candidato.paese,
-    tipo: verificaAI?.confermato ? verificaAI.tipo : (candidato.tipo_proposto || 'cover'),
+    tipo: tipoAI || candidato.tipo_proposto || 'cover',
     affidabilita,
-    statoVerifica: metodo === 'youtube_verificato_ai' || metodo === 'fonte_reale_verificata_ai'
+    statoVerifica: metodo === 'fonte_reale_coerente_ai' || metodo === 'fonte_reale_verificata_ai'
       ? 'verificato_ai_su_fonte'
       : metodo === 'fonte_affidabile'
         ? 'verificato_fonte_affidabile'
-        : 'verificato_multifonte',
+        : metodo === 'fonte_strutturata'
+          ? 'verificato_fonte_strutturata'
+          : 'verificato_multifonte',
     derivazione: false,
-    derivazioneTradotta: (verificaAI?.tipo || candidato.tipo_proposto) === 'adattamento'
+    derivazioneTradotta: (tipoAI || candidato.tipo_proposto) === 'adattamento'
   };
 }
 
@@ -260,14 +278,24 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
       }
     }
 
-    const verificaAI = await verificaCandidatoConIA({
-      candidato,
-      originale: originalePerIndagine(composizione),
-      fonti,
-      creditiOriginale
-    }, env);
+    // Prima decidiamo con cio che e gia stato verificato durante la scoperta.
+    // Se una fonte reale + coerenza AI sono sufficienti, il passaggio successivo
+    // non ha piu potere di veto: serve per tipo versione e crediti mancanti.
+    let valutazione = valutaProveCandidato(candidato, fonti, strutturata, soglia, null);
+    let verificaAI = { disponibile: false, confermato: false, crediti: [] };
 
-    const valutazione = valutaProveCandidato(candidato, fonti, strutturata, soglia, verificaAI);
+    if (fonti.length) {
+      verificaAI = await verificaCandidatoConIA({
+        candidato,
+        originale: originalePerIndagine(composizione),
+        fonti,
+        creditiOriginale
+      }, env);
+      if (!valutazione.promosso) {
+        valutazione = valutaProveCandidato(candidato, fonti, strutturata, soglia, verificaAI);
+      }
+    }
+
     if (!valutazione.promosso) {
       await aggiornaEsitoCandidato(db, candidato.id, {
         stato: fonti.length ? 'verifica_parziale' : 'da_verificare',
@@ -280,7 +308,7 @@ export async function verificaCandidatiMultifonte({ titolo, artista }, env, opzi
         interprete: candidato.interprete,
         stato: 'in_attesa',
         affidabilita: valutazione.affidabilita,
-        verificaAI: verificaAI?.disponibile ? (verificaAI.confermato ? 'confermata' : 'non_confermata') : 'non_disponibile'
+        verificaAI: verificaAI?.disponibile ? (verificaAI.confermato ? 'coerenza_supplementare' : 'solo_arricchimento') : 'non_disponibile'
       });
       continue;
     }

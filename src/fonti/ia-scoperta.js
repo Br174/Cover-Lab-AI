@@ -1,12 +1,14 @@
-const PROVIDER_AMMESSI = new Set(['youtube', 'cataloghi', 'internet_archive']);
+const PROVIDER_AMMESSI = new Set([
+  'youtube', 'cataloghi', 'deezer', 'web_editoriale', 'wikipedia', 'internet_archive'
+]);
 
 // Nessun limite complessivo al catalogo: questi limiti valgono SOLO per una
 // singola tornata, cosi l Archivio Vivo puo continuare nei giri successivi.
-const MASSIMO_STRATEGIE_CONTESTO = 40;
-const MASSIMO_CANDIDATI_CONTESTO = 80;
-const MASSIMO_STRATEGIE_TORNATA = 8;
-const MASSIMO_CANDIDATI_TORNATA = 16;
-const MASSIMO_RISULTATI_SORGENTE_TORNATA = 30;
+const MASSIMO_STRATEGIE_CONTESTO = 60;
+const MASSIMO_CANDIDATI_CONTESTO = 120;
+const MASSIMO_STRATEGIE_TORNATA = 12;
+const MASSIMO_CANDIDATI_TORNATA = 24;
+const MASSIMO_RISULTATI_SORGENTE_TORNATA = 40;
 const MASSIMO_DOMANDE_DIAGNOSTICA = 16;
 const TIMEOUT_PIANO_MS = 30000;
 const TIMEOUT_RECUPERO_CANDIDATI_MS = 22000;
@@ -151,13 +153,17 @@ function strategieDaAgenda({ titolo, artista, lingua, paese, domandeAgenda = [],
       : id.includes('italia') ? 'cover italiana versione'
       : obiettivo;
     aggiungi('cataloghi', `${base} ${localita}`, 92);
-    aggiungi('internet_archive', `${base} ${localita}`, 78);
+    aggiungi('deezer', `${base} ${localita}`, 91);
+    aggiungi('web_editoriale', `${base} ${localita}`, 82);
+    aggiungi('internet_archive', `${base} ${localita}`, 74);
     if (risultato.length >= MASSIMO_STRATEGIE_TORNATA) break;
   }
 
   if (!risultato.length) {
     aggiungi('cataloghi', `${base} cover version adaptation`, 90);
-    aggiungi('internet_archive', `${base} cover version adaptation`, 76);
+    aggiungi('deezer', `${base} cover version adaptation`, 89);
+    aggiungi('web_editoriale', `${base} cover version adaptation`, 80);
+    aggiungi('internet_archive', `${base} cover version adaptation`, 72);
   }
   return risultato.slice(0, MASSIMO_STRATEGIE_TORNATA);
 }
@@ -279,16 +285,17 @@ async function recuperaCandidatiSpecificiConIA({
       content: [
         'Sei il secondo passaggio del REGISTA di Cover Lab AI.',
         'Il primo passaggio non ha prodotto candidati specifici: devi formulare IPOTESI MUSICALI da sottoporre a verifica esterna.',
+        'Autointerrogati in modo ampio: pensa anche a decine di versioni, fino a circa cento ipotesi mentali se la composizione e molto reinterpretata, ma restituisci solo le piste nuove migliori di questa tornata.',
         'Elenca soltanto versioni per cui sai indicare sia il titolo usato dalla versione sia l interprete.',
         'Includi quando opportuno cover, adattamenti con titolo tradotto o diverso, versioni strumentali e pubblicazioni internazionali.',
-        'NON certificare nulla e NON presentare i candidati come fatti: sono piste da verificare.',
+        'NON certificare nulla e NON presentare i candidati come fatti: sono piste da verificare sul web o nei cataloghi.',
         'Non includere la registrazione originale con lo stesso titolo e lo stesso artista.',
         'Se non ricordi versioni specifiche, restituisci candidati vuoti invece di inventare.',
-        'Per ogni candidato puoi proporre una query mirata su cataloghi oppure internet_archive per cercare una conferma reale.',
-        `Restituisci al massimo ${MASSIMO_CANDIDATI_TORNATA} candidati e ${MASSIMO_STRATEGIE_TORNATA} strategie.`,
+        'Per ogni candidato crea quando possibile una query mirata titolo+interprete su deezer, cataloghi, web_editoriale, wikipedia, youtube o internet_archive.',
+        `Restituisci al massimo ${MASSIMO_CANDIDATI_TORNATA} candidati e ${MASSIMO_STRATEGIE_TORNATA} strategie in questa tornata.`,
         'Rispondi esclusivamente con JSON valido {candidati:[...],strategie:[...]}.',
         'Candidato: {titolo,interprete,anno,lingua,paese,tipo,affidabilita}.',
-        'Strategia: {provider,query,lingua,paese,priorita}. La confidenza del candidato non deve essere interpretata come prova.'
+        'Strategia: {provider,query,lingua,paese,priorita}. La confidenza del candidato non e una prova.'
       ].join(' ')
     },
     {
@@ -313,7 +320,7 @@ async function recuperaCandidatiSpecificiConIA({
         messages: messaggi,
         response_format: { type: 'json_object' },
         temperature: 0.15,
-        max_completion_tokens: 1300
+        max_completion_tokens: 2200
       }),
       TIMEOUT_RECUPERO_CANDIDATI_MS,
       'RECUPERO_CANDIDATI'
@@ -332,20 +339,28 @@ async function recuperaCandidatiSpecificiConIA({
 
     const strategieEsplicite = (Array.isArray(dati.strategie) ? dati.strategie : []);
     const strategieMirate = [];
-    for (const c of candidati.slice(0, 4)) {
+    for (const c of candidati.slice(0, 6)) {
+      const queryMirata = `${c.titolo} ${c.interprete}`;
+      strategieMirate.push({
+        provider: 'deezer',
+        query: queryMirata,
+        lingua: c.lingua || lingua || null,
+        paese: c.paese || paese || null,
+        priorita: 100
+      });
       strategieMirate.push({
         provider: 'cataloghi',
-        query: `${c.titolo} ${c.interprete}`,
+        query: queryMirata,
         lingua: c.lingua || lingua || null,
         paese: c.paese || paese || null,
         priorita: 99
       });
       strategieMirate.push({
-        provider: 'internet_archive',
-        query: `${c.titolo} ${c.interprete}`,
+        provider: 'web_editoriale',
+        query: `"${c.titolo}" "${c.interprete}"`,
         lingua: c.lingua || lingua || null,
         paese: c.paese || paese || null,
-        priorita: 82
+        priorita: 96
       });
     }
 
@@ -401,16 +416,17 @@ export async function generaPianoScopertaConIA({
       content: [
         'Sei il REGISTA della ricerca musicale di Cover Lab AI, non un semplice filtro di database.',
         'PRIMA di consultare fonti esterne devi autointerrogarti usando le domande dell agenda e la tua conoscenza generale della musica.',
+        'Autointerrogati in modo ampio: se il brano lo giustifica, considera mentalmente anche fino a circa cento possibili cover, adattamenti, strumentali, live e titoli alternativi; poi restituisci le piste nuove migliori per questa tornata.',
         'Per ogni domanda pensa a versioni, interpreti, titoli tradotti o completamente differenti, adattamenti, lingue, paesi, anni e crediti che conosci o ritieni plausibili.',
-        'Le tue risposte interne NON sono prove: trasformale in IPOTESI da verificare e in strategie concrete per cercare conferme sulle fonti reali.',
-        'Se ricordi una versione specifica, proponila come candidato e crea almeno una strategia utile a confermarla quando possibile.',
+        'Le tue risposte interne NON sono prove: trasformale in IPOTESI da verificare e in strategie concrete per cercare conferme su fonti reali.',
+        'Se ricordi una versione specifica, proponila come candidato e crea una query mirata titolo+interprete. Privilegia deezer, cataloghi e web_editoriale; usa anche wikipedia, youtube e internet_archive quando appropriato.',
+        'Una conferma puo provenire da qualunque fonte pubblica concreta: catalogo, pagina artista/etichetta, articolo, rivista, enciclopedia, video o archivio. Non richiedere per forza due fonti.',
         'Se un dato e incerto non inventarlo: lascialo nullo e genera una strategia per verificarlo.',
         'Le nuove informazioni possono generare nuove domande e nuove piste nei giri successivi.',
         `In QUESTA singola tornata restituisci al massimo ${MASSIMO_STRATEGIE_TORNATA} strategie e ${MASSIMO_CANDIDATI_TORNATA} candidati, scegliendo le piste nuove a maggior valore.`,
         'NON esiste alcun limite complessivo al numero di cover: i limiti della tornata servono solo a proteggere tempo e risorse e l Archivio Vivo continuera nei giri successivi.',
         'Non ripetere strategie o candidati gia forniti.',
-        'Per ogni query indica il provider preferito tra youtube, cataloghi oppure internet_archive.',
-        'YouTube e una fonte di scoperta: Cover Lab non cerca apposta un video YouTube per una cover trovata altrove.',
+        'Per ogni query indica il provider preferito tra youtube, cataloghi, deezer, web_editoriale, wikipedia oppure internet_archive.',
         'Imposta esaurita=true solo se, per le domande di questa agenda, non riesci davvero a proporre altre piste sostanzialmente nuove; non significa che il catalogo mondiale sia completo.',
         'Rispondi esclusivamente con JSON valido nel formato {domandeEsplorate:[...], strategie:[...], candidati:[...], nuoveDomande:[...], esaurita:boolean}.',
         'domandeEsplorate contiene gli id delle domande dell agenda che hai effettivamente considerato.',
@@ -439,7 +455,7 @@ export async function generaPianoScopertaConIA({
         messages: messaggi,
         response_format: { type: 'json_object' },
         temperature: 0.25,
-        max_completion_tokens: 1500
+        max_completion_tokens: 2600
       }),
       TIMEOUT_PIANO_MS,
       'PIANO_SCOPERTA'
@@ -474,7 +490,7 @@ export async function generaPianoScopertaConIA({
     .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
     .map(x => testo(x, 120)).filter(Boolean);
   const nuoveDomande = (Array.isArray(dati?.nuoveDomande) ? dati.nuoveDomande : [])
-    .slice(0, 12).map(x => testo(x, 400)).filter(Boolean);
+    .slice(0, 16).map(x => testo(x, 400)).filter(Boolean);
 
   let strategie = strategieAI.length ? strategieAI : fallbackAgenda();
   let recuperoCandidati = null;
@@ -522,18 +538,22 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
     descrizione: e.descrizione,
     autoreCanale: e.autoreCanale,
     dataPubblicazione: e.dataPubblicazione,
-    idEsterno: e.idEsterno
+    idEsterno: e.idEsterno,
+    indirizzo: e.indirizzo
   }));
 
   const messaggi = [
     {
       role: 'system',
       content: [
-        'Sei il filtro di scoperta di Cover Lab AI.',
-        'Ricevi risultati provenienti da una piattaforma e la composizione originale.',
-        'Individua solo elementi plausibilmente collegati alla stessa composizione.',
-        'Non certificare una cover solo dal titolo: estrai un candidato da verificare ulteriormente.',
+        'Sei il verificatore di corrispondenza tra una fonte reale e le ipotesi di Cover Lab AI.',
+        'Ricevi risultati provenienti da un catalogo, un archivio, una piattaforma o una fonte web e la composizione originale.',
+        'Decidi se ciascun risultato identifica realmente una cover, un adattamento, una versione strumentale, live o altra registrazione della stessa composizione.',
+        'Non basta il titolo uguale: evita omonimie, articoli non pertinenti, autori scambiati per interpreti e semplici citazioni prive di una registrazione identificabile.',
+        'Quando titolo/interprete e contesto della fonte rendono chiara la relazione, imposta correlato=true e usa affidabilita almeno 70: quella fonte potra valere come conferma esterna dell esistenza della versione.',
+        'Se la relazione e solo possibile o ambigua, usa correlato=false oppure affidabilita sotto 70.',
         'Se non riesci a distinguere interprete e titolo, non inventarli.',
+        'Qui non devi completare i crediti: quelli saranno arricchiti dopo la conferma.',
         'Rispondi esclusivamente con JSON valido {risultati:[...]}.',
         'Ogni risultato: {indice, correlato, titolo, interprete, anno, lingua, paese, tipo, affidabilita, motivo}.'
       ].join(' ')
@@ -547,7 +567,7 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
         messages: messaggi,
         response_format: { type: 'json_object' },
         temperature: 0.1,
-        max_completion_tokens: 1400
+        max_completion_tokens: 1800
       }),
       TIMEOUT_FILTRO_MS,
       'FILTRO_SORGENTE'
@@ -563,11 +583,12 @@ export async function interpretaRisultatiSorgenteConIA(originale, elementi = [],
         lingua: testo(r.lingua, 20) || null,
         paese: testo(r.paese, 30) || null,
         tipo: testo(r.tipo, 40) || 'dubbio',
-        affidabilita: numero(r.affidabilita ?? 25, 0, 85),
+        affidabilita: numero(r.affidabilita ?? 25, 0, 90),
         motivo: testo(r.motivo, 300),
-        origineDeterministica: false
+        origineDeterministica: false,
+        coerenzaFonteAI: numero(r.affidabilita ?? 25, 0, 90) >= 70
       }))
-      .filter(r => Number.isInteger(r.indice) && r.indice >= 0 && r.indice < input.length && r.titolo);
+      .filter(r => Number.isInteger(r.indice) && r.indice >= 0 && r.indice < input.length && r.titolo && r.interprete);
     return unisciInterpretazioni(ai, fallback);
   } catch {
     return fallback;

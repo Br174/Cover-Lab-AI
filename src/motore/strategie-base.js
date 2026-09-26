@@ -28,6 +28,10 @@ export function generaStrategieDeterministiche(originale = {}) {
   const elenco = [];
   const viste = new Set();
 
+  // Wikipedia/MediaWiki e una fonte di scoperta editoriale: la query usa il
+  // titolo canonico per aprire la voce del brano e leggere sezioni Cover/Versioni.
+  aggiungi(elenco, viste, 'wikipedia', titolo, 99, lingua, paese);
+
   // YouTube e' una fonte di scoperta. Non viene usato per cercare apposta
   // il video di una cover trovata altrove: queste query appartengono al giro
   // autonomo di scoperta YouTube del motore.
@@ -67,6 +71,11 @@ export function generaStrategieFallback(originale = {}, providerId, strategieGia
   const elenco = [];
   const viste = new Set(giaViste);
   const provider = String(providerId).toLowerCase();
+
+  if (provider === 'wikipedia') {
+    aggiungi(elenco, viste, provider, titolo, 99, lingua, paese);
+    return elenco;
+  }
 
   const variantiComuni = [
     [titolo, 82],

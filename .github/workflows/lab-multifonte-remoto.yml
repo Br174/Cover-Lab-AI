@@ -85,7 +85,7 @@ jobs:
           python - <<'PY'
           import json
           d=json.load(open('/tmp/gino.json',encoding='utf-8'))
-          assert d.get('stato') in ('pronto','ricerca_incompleta'), d
+          assert d.get('stato') == 'pronto', d
           interpretazione=((d.get('ricercaLibera') or {}).get('interpretazione') or {})
           titolo=(interpretazione.get('titolo') or '').lower()
           artista=(interpretazione.get('artista') or '').lower()
@@ -94,11 +94,14 @@ jobs:
           assert 'autocontrollo' in d, d
           comp=d.get('composizione') or {}
           assert isinstance(comp.get('crediti') or [], list), comp
-          for v in d.get('versioni') or []:
+          versioni=d.get('versioni') or []
+          assert len(versioni) > 0, d
+          for v in versioni:
               assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
               assert isinstance(v.get('crediti'), list), v
-          print('OK: la forma digitata sul telefono viene interpretata come Gino Paoli - Sapore di sale.')
-          print('Stato:', d.get('stato'), 'Versioni:', len(d.get('versioni') or []))
+              assert len(v.get('crediti')) > 0, v
+          print('OK: Gino Paoli - Sapore di sale restituisce versioni reali.')
+          print('Versioni:', len(versioni), 'Crediti originale:', len(comp.get('crediti') or []))
           PY
 
           echo "COLLAUDO REMOTO LAB 0.7.2 COMPLETATO."

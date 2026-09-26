@@ -23,7 +23,7 @@ function artista(recording) {
   return (recording?.['artist-credit'] || [])
     .map(x => x?.name || x?.artist?.name)
     .filter(Boolean)
-    .join('');
+    .join(', ');
 }
 
 function anno(recording) {
@@ -41,7 +41,7 @@ async function get(url, fetchFn) {
   const risposta = await fetchFn(url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'CoverLabAI/0.5 (https://github.com/Br174/Cover-Lab-AI)'
+      'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
     }
   });
   if (!risposta.ok) {

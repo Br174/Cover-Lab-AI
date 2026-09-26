@@ -15,12 +15,8 @@ function provaJson(testoRaw) {
   if (typeof testoRaw !== 'string') return null;
   let s = testoRaw.trim();
   if (!s) return null;
-
-  // Alcuni modelli racchiudono il JSON in blocchi Markdown anche quando viene
-  // richiesto response_format=json_object. Non deve azzerare l intero Regista.
   s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try { return JSON.parse(s); } catch { /* prova estrazione */ }
-
   const primo = s.indexOf('{');
   const ultimo = s.lastIndexOf('}');
   if (primo >= 0 && ultimo > primo) {
@@ -31,15 +27,10 @@ function provaJson(testoRaw) {
 
 function leggiJson(raw) {
   if (!raw) return null;
-
-  // Cloudflare Workers AI puo restituire direttamente l oggetto JSON.
   if (typeof raw === 'object' && !Array.isArray(raw)) {
-    if (Array.isArray(raw.strategie) || Array.isArray(raw.candidati) || Array.isArray(raw.risultati)) {
-      return raw;
-    }
+    if (Array.isArray(raw.strategie) || Array.isArray(raw.candidati) || Array.isArray(raw.risultati)) return raw;
     if (raw.response && typeof raw.response === 'object') return raw.response;
   }
-
   const tentativi = [
     raw?.response,
     raw?.output_text,
@@ -110,19 +101,20 @@ export function estraiCandidatiDeterministici(originale, elementi = []) {
 
     const esatto = titoloFonte === titoloAtteso;
     const contiene = !esatto && (
-      titoloFonte.includes(titoloAtteso) ||
-      titoloAtteso.includes(titoloFonte)
+      titoloFonte.includes(titoloAtteso) || titoloAtteso.includes(titoloFonte)
     );
     if (!esatto && !contiene) continue;
 
-    const interprete = testo(e.interprete || e.autoreCanale, 200);
+    // Il fallback automatico richiede un interprete strutturato dalla fonte.
+    // Un autore di canale/upload non viene mai trasformato automaticamente
+    // nell interprete della cover: quello resta compito dell AI e della verifica.
+    const interprete = testo(e.interprete, 200);
     if (!interprete) continue;
     if (artistaOriginale && normalizza(interprete) === artistaOriginale) continue;
 
     const chiave = `${indice}::${normalizza(interprete)}`;
     if (visti.has(chiave)) continue;
     visti.add(chiave);
-
     risultato.push({
       indice,
       titolo: titoloOriginale || testo(e.titolo, 250),
@@ -133,8 +125,8 @@ export function estraiCandidatiDeterministici(originale, elementi = []) {
       tipo: 'dubbio',
       affidabilita: esatto ? 65 : 55,
       motivo: esatto
-        ? 'Titolo coincidente e interprete diverso: pista deterministica da verificare.'
-        : 'Titolo della fonte contiene il titolo della composizione: pista deterministica da verificare.',
+        ? 'Titolo coincidente e interprete strutturato diverso: pista deterministica da verificare.'
+        : 'Titolo della fonte contiene la composizione e l interprete e strutturato: pista deterministica da verificare.',
       origineDeterministica: true
     });
   }
@@ -143,12 +135,15 @@ export function estraiCandidatiDeterministici(originale, elementi = []) {
 
 function unisciInterpretazioni(ai = [], deterministiche = []) {
   const mappa = new Map();
-  for (const r of [...ai, ...deterministiche]) {
+  const indiciCopertiDaAI = new Set(ai.map(r => Number(r.indice)));
+  for (const r of ai) {
     const chiave = `${Number(r.indice)}::${normalizza(r.interprete)}::${normalizza(r.titolo)}`;
-    const esistente = mappa.get(chiave);
-    if (!esistente || Number(r.affidabilita || 0) > Number(esistente.affidabilita || 0)) {
-      mappa.set(chiave, r);
-    }
+    mappa.set(chiave, r);
+  }
+  for (const r of deterministiche) {
+    if (indiciCopertiDaAI.has(Number(r.indice))) continue;
+    const chiave = `${Number(r.indice)}::${normalizza(r.interprete)}::${normalizza(r.titolo)}`;
+    if (!mappa.has(chiave)) mappa.set(chiave, r);
   }
   return [...mappa.values()].slice(0, MASSIMO_RISULTATI_SORGENTE_TORNATA);
 }
@@ -229,12 +224,8 @@ export async function generaPianoScopertaConIA({
   } catch (e) {
     return {
       disponibile: true,
-      strategie: [],
-      candidati: [],
-      domandeEsplorate: [],
-      nuoveDomande: [],
-      esaurita: false,
-      errore: e?.message || 'Errore AI non specificato'
+      strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [],
+      esaurita: false, errore: e?.message || 'Errore AI non specificato'
     };
   }
 
@@ -242,12 +233,8 @@ export async function generaPianoScopertaConIA({
   if (!dati) {
     return {
       disponibile: true,
-      strategie: [],
-      candidati: [],
-      domandeEsplorate: [],
-      nuoveDomande: [],
-      esaurita: false,
-      errore: 'RISPOSTA_AI_NON_INTERPRETABILE'
+      strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [],
+      esaurita: false, errore: 'RISPOSTA_AI_NON_INTERPRETABILE'
     };
   }
 
@@ -258,8 +245,7 @@ export async function generaPianoScopertaConIA({
       const query = testo(s?.query, 300);
       if (!PROVIDER_AMMESSI.has(provider) || !query) return null;
       return {
-        provider,
-        query,
+        provider, query,
         lingua: testo(s?.lingua, 20) || null,
         paese: testo(s?.paese, 20) || null,
         priorita: numero(s?.priorita ?? 50, 1, 100)
@@ -287,12 +273,9 @@ export async function generaPianoScopertaConIA({
 
   const domandeEsplorate = (Array.isArray(dati.domandeEsplorate) ? dati.domandeEsplorate : [])
     .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
-    .map(x => testo(x, 120))
-    .filter(Boolean);
+    .map(x => testo(x, 120)).filter(Boolean);
   const nuoveDomande = (Array.isArray(dati.nuoveDomande) ? dati.nuoveDomande : [])
-    .slice(0, 12)
-    .map(x => testo(x, 400))
-    .filter(Boolean);
+    .slice(0, 12).map(x => testo(x, 400)).filter(Boolean);
 
   return {
     disponibile: true,

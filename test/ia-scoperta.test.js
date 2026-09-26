@@ -120,6 +120,46 @@ test('il parser del Regista recupera anche JSON racchiuso in blocchi markdown', 
   assert.deepEqual(piano.domandeEsplorate, ['italia']);
 });
 
+test('il parser recupera JSON utile anche dentro wrapper annidati e testo extra', async () => {
+  const env = {
+    AI: {
+      async run() {
+        return {
+          result: {
+            output: [{ text: 'Nota interna ignorata. {"domandeEsplorate":["francia"],"strategie":[{"provider":"cataloghi","query":"Sapore di sale français adaptation","priorita":93}],"candidati":[],"nuoveDomande":[],"esaurita":false} testo finale' }]
+          }
+        };
+      }
+    }
+  };
+  const piano = await generaPianoScopertaConIA({
+    titolo: 'Sapore di sale', artista: 'Gino Paoli',
+    agenda: { domande: [{ id: 'francia', domanda: 'Versioni francesi?', obiettivo: 'Francia' }] }
+  }, env);
+  assert.equal(piano.avviso, undefined);
+  assert.equal(piano.strategie.length, 1);
+  assert.equal(piano.strategie[0].provider, 'cataloghi');
+  assert.deepEqual(piano.domandeEsplorate, ['francia']);
+});
+
+test('se la risposta AI non e interpretabile l agenda genera strategie ma nessun fatto certificato', async () => {
+  const env = { AI: { async run() { return { response: 'testo non JSON e nessun fatto strutturato' }; } } };
+  const piano = await generaPianoScopertaConIA({
+    titolo: 'Sapore di sale', artista: 'Gino Paoli', lingua: 'ita',
+    agenda: {
+      domande: [
+        { id: 'spagna_latam', domanda: 'Quali versioni spagnole?', obiettivo: 'versioni spagnole' },
+        { id: 'francia', domanda: 'Quali versioni francesi?', obiettivo: 'versioni francesi' }
+      ]
+    }
+  }, env);
+  assert.equal(piano.recupero, 'fallback_agenda');
+  assert.equal(piano.avviso, 'RISPOSTA_AI_NON_INTERPRETABILE');
+  assert.ok(piano.strategie.length >= 2);
+  assert.equal(piano.candidati.length, 0, 'il fallback non inventa candidati');
+  assert.deepEqual(piano.domandeEsplorate, ['spagna_latam', 'francia']);
+});
+
 test('l IA filtra i risultati di una sorgente senza certificare automaticamente', async () => {
   const env = {
     MODELLO_CLASSIFICAZIONE: 'modello-test',

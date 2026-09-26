@@ -1,9 +1,7 @@
 const BASE = 'https://musicbrainz.org/ws/2';
 const ATTESA_MS = 1100;
 
-function dormi(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+function dormi(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function normalizza(valore = '') {
   return String(valore)
@@ -36,12 +34,57 @@ function anno(recording) {
   return anni.length ? Math.min(...anni) : null;
 }
 
+function ruoloCredito(tipo = '') {
+  const t = String(tipo).toLowerCase().trim();
+  if (t === 'composer' || t === 'lyricist and composer') return 'compositore';
+  if (t === 'lyricist' || t === 'librettist') return 'paroliere';
+  if (t === 'writer') return 'autore';
+  if (t === 'translator') return 'traduttore';
+  if (t === 'arranger') return 'arrangiatore';
+  return null;
+}
+
+function creditiOpera(opera = {}) {
+  const risultato = [];
+  const viste = new Set();
+  for (const relazione of opera.relations || []) {
+    const ruolo = ruoloCredito(relazione?.type);
+    const nome = String(relazione?.artist?.name || '').trim();
+    if (!ruolo || !nome) continue;
+    const chiave = `${ruolo}::${nome.toLowerCase()}`;
+    if (viste.has(chiave)) continue;
+    viste.add(chiave);
+    risultato.push({
+      ruolo,
+      nome,
+      fonte: 'musicbrainz',
+      idEsterno: relazione.artist?.id || null,
+      nota: relazione.type || null
+    });
+  }
+  return risultato;
+}
+
+function primaPubblicazione(recording = {}) {
+  const releases = recording.releases || [];
+  if (!releases.length) return null;
+  const ordinate = [...releases].sort((a, b) => String(a?.date || '9999').localeCompare(String(b?.date || '9999')));
+  const r = ordinate[0];
+  return {
+    titolo: r?.title || null,
+    data: r?.date || recording?.['first-release-date'] || null,
+    paese: r?.country || null,
+    stato: r?.status || null,
+    idMusicBrainz: r?.id || null
+  };
+}
+
 async function get(url, fetchFn) {
   if (fetchFn === fetch) await dormi(ATTESA_MS);
   const risposta = await fetchFn(url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
+      'User-Agent': 'CoverLabAI/0.8 (https://github.com/Br174/Cover-Lab-AI)'
     }
   });
   if (!risposta.ok) {
@@ -63,10 +106,7 @@ export async function verificaCandidatoSuMusicBrainz({
   }
 
   const q = `recording:"${fraseLucene(titolo)}" AND artist:"${fraseLucene(interprete)}"`;
-  const ricerca = await get(
-    `${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=8`,
-    fetchFn
-  );
+  const ricerca = await get(`${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=8`, fetchFn);
 
   const titoloAtteso = normalizza(titolo);
   const artistaAtteso = normalizza(interprete);
@@ -104,6 +144,15 @@ export async function verificaCandidatoSuMusicBrainz({
       const tipo = tradotta ? 'adattamento' : (esplicitaCover ? 'cover' : 'cover');
       const affidabilita = stessa ? 99 : 97;
 
+      let creditiLavoro = [];
+      try {
+        const opera = await get(`${BASE}/work/${idOpera}?inc=artist-rels+work-rels&fmt=json`, fetchFn);
+        creditiLavoro = creditiOpera(opera);
+      } catch {
+        creditiLavoro = [];
+      }
+
+      const interpreteVerificato = artista(dettaglio) || interprete;
       return {
         stato: 'verificato',
         verificato: true,
@@ -113,7 +162,7 @@ export async function verificaCandidatoSuMusicBrainz({
           : 'MusicBrainz collega la registrazione a una versione derivata nota della composizione.',
         versione: {
           titolo: dettaglio.title || titolo,
-          interprete: artista(dettaglio) || interprete,
+          interprete: interpreteVerificato,
           anno: anno(dettaglio),
           lingua: derivata?.lingua || null,
           paese: null,
@@ -124,6 +173,8 @@ export async function verificaCandidatoSuMusicBrainz({
           titoloOpera: relazione.work.title || derivata?.titolo || null,
           derivazione: !stessa,
           derivazioneTradotta: tradotta,
+          pubblicazione: primaPubblicazione(dettaglio),
+          creditiOpera: creditiLavoro,
           statoVerifica: 'verificato_musicbrainz'
         },
         fonte: {
@@ -135,10 +186,11 @@ export async function verificaCandidatoSuMusicBrainz({
         crediti: [
           {
             ruolo: 'interprete',
-            nome: artista(dettaglio) || interprete,
+            nome: interpreteVerificato,
             fonte: 'musicbrainz',
             idEsterno: dettaglio.id
-          }
+          },
+          ...creditiLavoro
         ]
       };
     }

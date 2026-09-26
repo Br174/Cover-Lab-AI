@@ -40,13 +40,18 @@ const ASSI = Object.freeze([
   },
   {
     id: 'interpreti',
-    domanda: 'Quali interpreti noti o meno noti hanno inciso, eseguito dal vivo o reinterpretato questa composizione?',
+    domanda: 'Quali interpreti noti o meno noti hanno inciso, pubblicato o eseguito dal vivo questa composizione?',
     obiettivo: 'interpreti e registrazioni'
   },
   {
+    id: 'natura_registrazione',
+    domanda: 'Per ciascuna versione nota: esiste una vera incisione pubblicata su singolo, album, EP o altra uscita discografica, oppure e solo una performance registrata dal vivo, TV, radio, sessione o upload online?',
+    obiettivo: 'separare pubblicazioni discografiche e performance registrate'
+  },
+  {
     id: 'crediti',
-    domanda: 'Quali traduttori, adattatori, parolieri o altri crediti possono collegare versioni straniere alla composizione originale?',
-    obiettivo: 'crediti e relazioni tra opere'
+    domanda: 'Quali compositori, parolieri, autori, traduttori, adattatori e arrangiatori sono documentati per la composizione originale e per le singole versioni?',
+    obiettivo: 'crediti completi e relazioni tra opere'
   },
   {
     id: 'varianti',
@@ -92,6 +97,8 @@ function domandeDatiMancanti(candidati = []) {
     if (!c?.anno) domande.push(domandaCandidato(c, 'anno', 'Qual e l anno corretto di pubblicazione o prima registrazione'));
     if (!c?.lingua) domande.push(domandaCandidato(c, 'lingua', 'Qual e la lingua della versione'));
     if (!c?.paese) domande.push(domandaCandidato(c, 'paese', 'A quale paese o mercato e associata la versione'));
+    if (!c?.naturaVersione) domande.push(domandaCandidato(c, 'natura', 'E una incisione realmente pubblicata o una performance registrata'));
+    if (!c?.crediti?.length) domande.push(domandaCandidato(c, 'crediti', 'Quali crediti documentati appartengono alla versione'));
   }
   return domande.filter(Boolean);
 }
@@ -137,6 +144,8 @@ export function descriviRegistaAI() {
     metodo: 'autointerrogazione_guidata',
     usoConoscenzaAI: 'genera_ipotesi_e_piste_da_verificare',
     provaFinale: 'richiede_conferme_reali_da_fonti_esterne',
+    distinguePubblicazioniEPerformance: true,
+    creditiComeDatoFondamentale: true,
     limiteTotaleCover: null,
     limite: 'solo_per_singola_tornata_per_proteggere_risorse_e_latenza',
     assiAutointerrogazione: ASSI.map(x => x.id)

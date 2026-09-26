@@ -23,6 +23,7 @@ function descriptorMusicBrainz() {
     capacita: [CAPACITA_PROVIDER.IDENTITA, CAPACITA_PROVIDER.REGISTRAZIONI, CAPACITA_PROVIDER.VERIFICA],
     aliasStrategia: ['musicbrainz'],
     paginaUnica: false,
+    gestisceLimitiInternamente: true,
     stato() {
       return { provider: 'musicbrainz', disponibile: true, stato: 'configurato_senza_chiave' };
     }

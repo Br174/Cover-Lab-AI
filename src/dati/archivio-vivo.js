@@ -1,5 +1,6 @@
 import { creaChiaveRicerca } from '../motore/normalizzazione.js';
 import { aggiungiFontiECrediti } from './dettagli-versioni.js';
+import { leggiCreditiComposizione } from './crediti-composizione.js';
 
 function interoPositivo(valore, ripiego, massimo = 1000) {
   const n = Number(valore);
@@ -200,6 +201,7 @@ export async function paginaVersioniArchiviate(db, {
   const totale = Number(conteggio?.totale || 0);
   const versioniBase = risultato.results || [];
   const versioni = await aggiungiFontiECrediti(db, versioniBase);
+  const creditiPersistiti = await leggiCreditiComposizione(db, composizione.id);
   const prossimoOffset = posizione + versioni.length < totale
     ? posizione + versioni.length
     : null;
@@ -211,7 +213,7 @@ export async function paginaVersioniArchiviate(db, {
       titolo: composizione.titolo_canonico,
       artista: composizione.artista_originale,
       compositore: composizione.compositore || null,
-      crediti: creditiComposizioneDaRiga(composizione),
+      crediti: creditiPersistiti.length ? creditiPersistiti : creditiComposizioneDaRiga(composizione),
       anno: composizione.anno_originale,
       lingua: composizione.lingua_originale,
       idMusicBrainz: composizione.id_musicbrainz

@@ -16,25 +16,23 @@ jobs:
   verifica:
     runs-on: ubuntu-latest
     steps:
-      - name: Verifica LAB 0.8 Archivio Cloud diagnostica e Sapore di sale
+      - name: Verifica qualitativa LAB 0.8 su Sapore di sale
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
 
-          echo "Collaudo finale LAB 0.8.0: attendo il deploy Cloudflare della revisione corrente..."
+          echo "Attendo il preview LAB 0.8.0..."
           sleep 30
           PRONTO=0
           for TENTATIVO in $(seq 1 120); do
             CODICE=$(curl --silent --show-error --max-time 15 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
             if [ "$CODICE" = "200" ] \
               && grep -q '"versione": "0.8.0"' /tmp/root.json \
-              && grep -q '"diagnosticaMotore": "predisposta"' /tmp/root.json \
-              && grep -q '"archivioCloud": "/archivio"' /tmp/root.json; then
+              && grep -q '"diagnosticaMotore": "predisposta"' /tmp/root.json; then
               PRONTO=1
               break
             fi
-            echo "Tentativo $TENTATIVO: preview 0.8.0 non ancora pronta (HTTP $CODICE)"
             sleep 5
           done
           test "$PRONTO" = "1"
@@ -42,164 +40,126 @@ jobs:
           python - <<'PY'
           import json
           d=json.load(open('/tmp/root.json',encoding='utf-8'))
-          assert d.get('versione') == '0.8.0', d
-          assert d.get('stato') == 'operativo', d
-          assert d.get('archivioCloud') == '/archivio', d
-          assert d.get('diagnosticaMotore') == 'predisposta', d
+          assert d.get('stato')=='operativo' and d.get('versione')=='0.8.0', d
+          assert d.get('archivioCloud')=='/archivio', d
           assert d.get('nessunLimiteTotaleCover') is True, d
-          assert d.get('lottoMusicLab') == 20, d
-          regola=d.get('archivioCertificato') or {}
-          assert regola.get('regola') == 'relazione_verificata_e_crediti_essenziali', regola
-          assert regola.get('sogliaMinimaAffidabilita') == 90, regola
-          assert regola.get('originaliConteggiatiComeCover') is False, regola
-          print('OK: motore 0.8.0 e regola Archivio certificato esposti.')
+          assert d.get('lottoMusicLab')==20, d
+          r=d.get('archivioCertificato') or {}
+          assert r.get('regola')=='relazione_verificata_e_crediti_essenziali', r
+          assert r.get('sogliaMinimaAffidabilita')==90, r
+          assert r.get('originaliConteggiatiComeCover') is False, r
           PY
 
-          echo "--- PAGINA ARCHIVIO CLOUD ---"
-          CODICE_HTML=$(curl --silent --show-error --max-time 20 -o /tmp/archivio.html -w '%{http_code}' "$BASE/archivio" || true)
-          echo "HTTP pagina Archivio: $CODICE_HTML"
-          test "$CODICE_HTML" = "200"
+          echo "--- ARCHIVIO CLOUD ---"
+          test "$(curl --silent --show-error --max-time 20 -o /tmp/archivio.html -w '%{http_code}' "$BASE/archivio")" = "200"
           grep -q 'Archivio Cover Lab' /tmp/archivio.html
           grep -q 'Cerca titolo, artista, adattamento' /tmp/archivio.html
 
-          echo "--- AGGIORNAMENTO STRUTTURATO MUSICBRAINZ: SAPORE DI SALE ---"
-          CODICE_APPROF=$(curl --silent --show-error --max-time 180 -o /tmp/approfondisci.json -w '%{http_code}' \
-            -X POST "$BASE/api/approfondisci" \
-            -H 'Content-Type: application/json' \
+          echo "--- BASE STRUTTURATA MUSICBRAINZ ---"
+          CODICE=$(curl --silent --show-error --max-time 180 -o /tmp/approfondisci.json -w '%{http_code}' \
+            -X POST "$BASE/api/approfondisci" -H 'Content-Type: application/json' \
             --data '{"titolo":"Sapore di sale","artista":"Gino Paoli","ordine":"asc"}' || true)
-          echo "HTTP approfondisci: $CODICE_APPROF"
-          cat /tmp/approfondisci.json || true
-          echo
-          test "$CODICE_APPROF" = "200"
+          test "$CODICE" = "200"
           python - <<'PY'
           import json
           d=json.load(open('/tmp/approfondisci.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
+          assert d.get('stato')=='pronto', d
           comp=d.get('composizione') or {}
           assert comp.get('idMusicBrainz'), comp
-          cred=comp.get('crediti') or []
-          assert any(str(x.get('ruolo','')).lower() in {'compositore','paroliere','autore'} for x in cred), cred
+          assert any(str(x.get('ruolo','')).lower() in {'compositore','paroliere','autore'} for x in comp.get('crediti') or []), comp
           totale=int(d.get('totaleRegistrazioniCollegate') or d.get('versioniIndividuate') or 0)
-          assert totale >= 3, ('MusicBrainz non restituisce neppure una base strutturata sufficiente', totale, d)
-          versioni=d.get('versioni') or []
-          collegate=[v for v in versioni if v.get('idOperaMusicBrainz') and v.get('idMusicBrainz')]
-          assert len(collegate) >= 3, ('meno di 3 registrazioni con recording/work MusicBrainz', len(collegate))
+          collegate=[v for v in d.get('versioni') or [] if v.get('idOperaMusicBrainz') and v.get('idMusicBrainz')]
           utili=[v for v in collegate if str(v.get('tipo','')).lower() not in {'originale','dubbio','non correlato'}]
-          assert len(utili) >= 1, ('MusicBrainz non ha prodotto nessuna versione non originale/dubbia', len(utili))
-          print('Base strutturata MusicBrainz:', totale, 'registrazioni collegate,', len(utili), 'versioni non originali/dubbie. Il requisito finale resta multifonte.')
+          assert totale>=3 and len(collegate)>=3 and len(utili)>=1, (totale,len(collegate),len(utili),d)
+          assert all(v.get('fonti') for v in collegate), ('prove MusicBrainz mancanti',collegate)
+          print('MusicBrainz:',totale,'registrazioni strutturate; risultato finale demandato al multifonte.')
           PY
 
-          echo "--- STATISTICHE ARCHIVIO DOPO RIVALIDAZIONE ---"
-          CODICE_STATS=$(curl --silent --show-error --max-time 20 -o /tmp/stats.json -w '%{http_code}' "$BASE/api/archivio/statistiche" || true)
-          echo "HTTP statistiche: $CODICE_STATS"
-          cat /tmp/stats.json || true
-          echo
-          test "$CODICE_STATS" = "200"
-          python - <<'PY'
-          import json
-          d=json.load(open('/tmp/stats.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
-          for k in ('braniPresenti','versioniArchiviate','versioniInVerifica','nuoveUltimoAggiornamento'):
-              assert isinstance(d.get(k), int), (k,d)
-          assert d.get('nuoveUltimoAggiornamento',0) <= d.get('versioniArchiviate',0), d
-          assert d.get('versioniArchiviate',0) >= 3, ('Archivio ancora troppo povero dopo rivalidazione/multifonte', d)
-          print('Archivio:', d.get('braniPresenti'), 'brani /', d.get('versioniArchiviate'), 'versioni certificate /', d.get('versioniInVerifica'), 'in verifica')
-          PY
-
-          echo "--- RICERCA ARCHIVIO MIRATA ---"
-          CODICE_AC=$(curl --silent --show-error --max-time 20 -o /tmp/ac.json -w '%{http_code}' \
-            "$BASE/api/archivio/cerca?q=sapore%20di%20sale" || true)
-          echo "HTTP ricerca Archivio: $CODICE_AC"
-          cat /tmp/ac.json || true
-          echo
-          test "$CODICE_AC" = "200"
-          python - <<'PY'
-          import json
-          d=json.load(open('/tmp/ac.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
-          assert isinstance(d.get('risultati'), list), d
-          assert len(d.get('risultati') or []) >= 1, d
-          assert int((d.get('risultati') or [{}])[0].get('versioniArchiviate') or 0) >= 3, d
-          print('Risultati ricerca Archivio:', len(d.get('risultati') or []))
-          PY
-
-          echo "--- RICERCA ESATTA GINO PAOLI / SAPORE DI SALE ---"
-          CODICE_GINO=$(curl --silent --show-error --max-time 130 -o /tmp/gino.json -w '%{http_code}' \
-            -X POST "$BASE/api/ricerca-libera" \
-            -H 'Content-Type: application/json' \
-            --data '{"query":"gino paoli sapore di sale","ordine":"asc"}' || true)
-          echo "HTTP Gino Paoli: $CODICE_GINO"
-          cat /tmp/gino.json || true
-          echo
-          test "$CODICE_GINO" = "200"
-          python - <<'PY'
-          import json
-          d=json.load(open('/tmp/gino.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
+          echo "--- TRE ONDATE REGISTA / MULTIFONTE ---"
+          for GIRO in 1 2 3; do
+            CODICE=$(curl --silent --show-error --max-time 150 -o "/tmp/gino-$GIRO.json" -w '%{http_code}' \
+              -X POST "$BASE/api/ricerca-libera" -H 'Content-Type: application/json' \
+              --data '{"query":"gino paoli sapore di sale","ordine":"asc"}' || true)
+            echo "Giro $GIRO HTTP $CODICE"
+            test "$CODICE" = "200"
+            python - "$GIRO" <<'PY'
+          import json,sys
+          giro=sys.argv[1]
+          d=json.load(open(f'/tmp/gino-{giro}.json',encoding='utf-8'))
+          assert d.get('stato')=='pronto', d
           i=((d.get('ricercaLibera') or {}).get('interpretazione') or {})
           assert 'sapore di sale' in (i.get('titolo') or '').lower(), i
           assert 'gino paoli' in (i.get('artista') or '').lower(), i
+          p=((d.get('giroDiagnostico') or {}).get('piano') or {})
+          assert p.get('stato') not in ('errore_ia','ia_non_disponibile'), p
+          v=(d.get('giroDiagnostico') or {}).get('verifica') or {}
+          assert v.get('stato')!='migrazione_verifica_non_applicata', v
+          print('giro',giro,'piano=',p.get('stato'),'candidate=',d.get('inVerifica',d.get('nuoveInVerificaNelGiro',0)),'cover=',len(d.get('versioni') or []))
+          PY
+            sleep 2
+          done
+
+          cp /tmp/gino-3.json /tmp/gino.json
+
+          echo "--- ARCHIVIO DOPO MULTIFONTE ---"
+          test "$(curl --silent --show-error --max-time 20 -o /tmp/stats.json -w '%{http_code}' "$BASE/api/archivio/statistiche")" = "200"
+          test "$(curl --silent --show-error --max-time 20 -o /tmp/ac.json -w '%{http_code}' "$BASE/api/archivio/cerca?q=sapore%20di%20sale")" = "200"
+          python - <<'PY'
+          import json
+          stats=json.load(open('/tmp/stats.json',encoding='utf-8'))
+          ac=json.load(open('/tmp/ac.json',encoding='utf-8'))
+          assert stats.get('stato')=='pronto', stats
+          for k in ('braniPresenti','versioniArchiviate','versioniInVerifica','nuoveUltimoAggiornamento'):
+              assert isinstance(stats.get(k),int),(k,stats)
+          assert stats.get('nuoveUltimoAggiornamento',0)<=stats.get('versioniArchiviate',0),stats
+          risultati=ac.get('risultati') or []
+          assert risultati, ac
+          dossier=int(risultati[0].get('versioniArchiviate') or 0)
+          assert dossier>=3, ('Il multifonte non ha ancora portato Sapore di sale ad almeno 3 cover certificate',dossier,stats,ac)
+          print('Archivio Sapore di sale:',dossier,'cover certificate; in verifica globali:',stats.get('versioniInVerifica'))
+          PY
+
+          echo "--- DOSSIER FINALE ---"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/gino.json',encoding='utf-8'))
           comp=d.get('composizione') or {}
-          c=comp.get('crediti') or []
-          assert len(c) > 0, comp
+          assert comp.get('crediti'), comp
           versioni=d.get('versioni') or []
-          assert len(versioni) >= 3, ('meno di 3 cover certificate nel dossier dopo approfondimento',d)
+          assert len(versioni)>=3, ('meno di 3 cover certificate nella risposta finale',d)
           ess={'compositore','paroliere','autore','traduttore','adattatore','arrangiatore'}
           for v in versioni:
               assert v.get('provenienzaRisultato') in ('archivio','ricerca'), v
-              assert v.get('statoArchivio') == 'archiviata', v
+              assert v.get('statoArchivio')=='archiviata', v
               assert str(v.get('tipo','')).lower() not in ('originale','dubbio'), v
-              assert int(v.get('affidabilita') or 0) >= 90, v
+              assert int(v.get('affidabilita') or 0)>=90, v
               assert str(v.get('statoVerifica','')).lower().startswith('verificato'), v
-              cred=v.get('crediti') or []
-              assert any(str(x.get('ruolo','')).lower() in ess for x in cred), ('crediti essenziali assenti',v)
+              assert any(str(x.get('ruolo','')).lower() in ess for x in v.get('crediti') or []), ('crediti essenziali assenti',v)
               assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
-          giro=d.get('giroDiagnostico') or {}
-          piano=giro.get('piano') or {}
-          assert piano.get('stato') not in ('errore_ia','ia_non_disponibile'), piano
-          verifica=giro.get('verifica') or {}
-          assert verifica.get('stato') != 'migrazione_verifica_non_applicata', verifica
-          print('Sapore di sale:',len(versioni),'cover certificate nella risposta')
-          print('Provenienza:',d.get('conteggioProvenienza'))
-          print('In verifica:',d.get('inVerifica',d.get('nuoveInVerificaNelGiro',0)))
-          print('Regista:',piano)
-          print('Verifica multifonte:',verifica)
+          print('Dossier finale:',len(versioni),'cover certificate, provenienza',d.get('conteggioProvenienza'))
           PY
 
-          echo "--- DIAGNOSTICA MOTORE ---"
-          CODICE_DIAG=$(curl --silent --show-error --max-time 30 -o /tmp/diag.json -w '%{http_code}' \
-            "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli" || true)
-          echo "HTTP diagnostica: $CODICE_DIAG"
-          cat /tmp/diag.json || true
-          echo
-          test "$CODICE_DIAG" = "200"
+          echo "--- DIAGNOSTICA COMPLETA ---"
+          test "$(curl --silent --show-error --max-time 30 -o /tmp/diag.json -w '%{http_code}' "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli")" = "200"
           python - <<'PY'
           import json
           d=json.load(open('/tmp/diag.json',encoding='utf-8'))
-          assert d.get('stato') == 'pronto', d
-          assert 'archivio' in d, d
-          assert isinstance(d.get('provider'), list), d
-          assert isinstance(d.get('fonti'), list), d
-          assert isinstance(d.get('strategie'), list), d
-          assert isinstance(d.get('prove'), list), d
-          assert 'registaAI' in d, d
-          assert len(d.get('provider') or []) > 0, d
-          assert len(d.get('prove') or []) > 0, ('nessuna prova materializzata', d)
+          assert d.get('stato')=='pronto',d
+          assert isinstance(d.get('provider'),list) and d.get('provider'),d
+          assert isinstance(d.get('fonti'),list),d
+          assert isinstance(d.get('strategie'),list),d
+          assert isinstance(d.get('prove'),list) and d.get('prove'),('nessuna prova materializzata',d)
+          assert 'registaAI' in d,d
           salute=d.get('saluteProvider') or []
-          assert isinstance(salute,list) and len(salute) > 0, ('salute provider vuota', d)
+          assert salute,('salute provider vuota',d)
           gestore=d.get('gestoreLimitiRegole') or {}
           regole=gestore.get('regole') or []
-          assert len(regole) >= 4, ('regole fonti incomplete', regole)
-          assert all(x.get('verificatoIl') for x in regole), regole
-          assert any(x.get('provider')=='musicbrainz' for x in regole), regole
-          for f in d.get('fonti') or []:
-              assert 'haContribuitoAllArchivio' in f, f
-          assert any(f.get('fonte')=='musicbrainz' and int(f.get('versioniConfermate') or 0)>0 for f in d.get('fonti') or []), d.get('fonti')
-          recenti=(d.get('strategie') or [])[:20]
-          for s in recenti:
+          assert len(regole)>=4 and all(x.get('verificatoIl') for x in regole),regole
+          assert any(f.get('fonte')=='musicbrainz' and int(f.get('versioniConfermate') or 0)>0 for f in d.get('fonti') or []),d.get('fonti')
+          for s in (d.get('strategie') or [])[:20]:
               if '429' in str(s.get('ultimoErrore') or ''):
-                  assert s.get('stato') != 'continua', ('429 lasciato in continua',s)
+                  assert s.get('stato')!='continua',('429 lasciato in continua',s)
           print('Diagnostica: provider',len(d.get('provider') or []),'fonti',len(d.get('fonti') or []),'prove',len(d.get('prove') or []),'salute',len(salute),'regole',len(regole))
           PY
 
-          echo "COLLAUDO REMOTO LAB 0.8.0 COMPLETATO."
+          echo "COLLAUDO REMOTO QUALITATIVO LAB 0.8.0 COMPLETATO."

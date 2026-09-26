@@ -258,7 +258,13 @@ export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite 
         derivazioneTradotta: Boolean(metadatiOpera.tradotta),
         idOperaMusicBrainz: idOpera,
         titoloOpera: metadatiOpera.titolo || null,
-        creditiOpera: Array.isArray(metadatiOpera.crediti) ? metadatiOpera.crediti : []
+        creditiOpera: Array.isArray(metadatiOpera.crediti) ? metadatiOpera.crediti : [],
+        fonti: [{
+          fonte: 'musicbrainz',
+          idEsterno: r.id,
+          indirizzo: `https://musicbrainz.org/recording/${r.id}`,
+          nota: `Registrazione collegata all opera MusicBrainz ${idOpera}`
+        }]
       };
     })
   };

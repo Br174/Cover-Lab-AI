@@ -41,7 +41,7 @@ function normalizzaCreditiAI(crediti = []) {
       ruolo,
       nome,
       fonte: 'ai_arricchimento',
-      nota: 'Credito aggiunto dalla verifica AI; da rivalidare con una fonte esterna quando disponibile.'
+      nota: 'Credito aggiunto come arricchimento AI; da rivalidare con una fonte esterna quando disponibile.'
     });
   }
   return risultato;
@@ -64,11 +64,13 @@ export async function verificaCandidatoConIA({ candidato, originale, fonti = [],
     {
       role: 'system',
       content: [
-        'Sei il verificatore musicale di Cover Lab AI.',
-        'Esiste gia almeno una fonte reale: non devi inventare l esistenza della cover.',
-        'Valuta se i dati della fonte sono coerenti con la composizione originale e con una vera cover, adattamento o performance della stessa opera.',
-        'Puoi usare la tua conoscenza musicale interna per completare crediti mancanti, ma questi crediti saranno marcati come arricchimento AI e potranno essere rivalidati in seguito.',
-        'Non confermare se sembra un brano omonimo, un upload ingannevole o un opera diversa.',
+        'Sei il passaggio di ARRICCHIMENTO di Cover Lab AI.',
+        'Esiste gia almeno una fonte reale associata al candidato. Se il motore lo ha gia confermato, non devi rimettere in discussione la sua esistenza.',
+        'Il tuo compito principale e classificare meglio la natura della versione e completare soltanto i crediti mancanti.',
+        'Puoi usare la tua conoscenza musicale interna per proporre compositore, paroliere, autore, adattatore, traduttore, arrangiatore o produttore mancanti.',
+        'I crediti che aggiungi saranno marcati come arricchimento AI e potranno essere rivalidati in seguito da una fonte esterna.',
+        'Il campo confermato indica solo una coerenza supplementare tra candidato, fonte e composizione; non e un veto su una conferma gia ottenuta dal motore.',
+        'Se noti chiaramente un omonimo o una relazione diversa, segnala confermato=false e spiega il motivo: il motore usera questa informazione come diagnostica o controllo supplementare.',
         'Rispondi esclusivamente JSON con: confermato, tipo, affidabilita, motivo, crediti[].'
       ].join(' ')
     },
@@ -109,14 +111,14 @@ export async function verificaCandidatoConIA({ candidato, originale, fonti = [],
       confermato,
       tipo: TIPI_AMMESSI.has(tipo) ? tipo : 'dubbio',
       affidabilita,
-      motivo: String(dati.motivo || 'Verifica AI su fonte reale.').slice(0, 500),
+      motivo: String(dati.motivo || 'Arricchimento AI su fonte reale.').slice(0, 500),
       crediti: normalizzaCreditiAI(dati.crediti)
     };
   } catch (e) {
     return {
       disponibile: true,
       confermato: false,
-      errore: String(e?.message || 'Errore verifica AI').slice(0, 500),
+      errore: String(e?.message || 'Errore arricchimento AI').slice(0, 500),
       crediti: []
     };
   }

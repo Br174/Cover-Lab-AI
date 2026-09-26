@@ -100,6 +100,33 @@ export async function diagnosticaComposizione(db, titolo, artista = '') {
     return r.results || [];
   }, []) : [];
 
+  const prove = await sicuro(async () => {
+    const candidato = await db.prepare(`
+      SELECT 'candidato' AS livello, fc.fonte, fc.id_esterno AS idEsterno,
+             fc.indirizzo, fc.titolo_fonte AS titoloFonte,
+             fc.data_pubblicazione AS dataPubblicazione,
+             c.titolo, c.interprete, c.stato
+      FROM fonti_candidato fc
+      JOIN candidati_scoperta c ON c.id=fc.candidato_id
+      WHERE c.chiave_composizione=?1
+      ORDER BY datetime(fc.data_verifica) DESC LIMIT 60
+    `).bind(chiave).all();
+    let archivio = { results: [] };
+    if (composizione) {
+      archivio = await db.prepare(`
+        SELECT 'archivio' AS livello, f.fonte, f.id_esterno AS idEsterno,
+               f.indirizzo, f.nota AS titoloFonte,
+               NULL AS dataPubblicazione,
+               v.titolo, v.interprete, v.stato_archivio AS stato
+        FROM fonti_verifica f
+        JOIN versioni v ON v.id=f.versione_id
+        WHERE v.composizione_id=?1
+        ORDER BY datetime(f.data_verifica) DESC LIMIT 60
+      `).bind(composizione.id).all();
+    }
+    return [...(archivio.results || []), ...(candidato.results || [])].slice(0, 100);
+  }, []);
+
   const archivio = composizione ? await sicuro(() => db.prepare(`
     SELECT
       SUM(CASE WHEN stato_archivio='archiviata' THEN 1 ELSE 0 END) AS archiviate,
@@ -187,6 +214,7 @@ export async function diagnosticaComposizione(db, titolo, artista = '') {
     strategie,
     statiCandidati,
     fonti: [...contributi.values()].sort((a,b) => Number(b.haContribuitoAllArchivio)-Number(a.haContribuitoAllArchivio) || b.versioniConfermate-a.versioniConfermate),
+    prove,
     ultimeScansioni
   };
 }

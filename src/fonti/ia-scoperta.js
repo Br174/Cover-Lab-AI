@@ -11,39 +11,81 @@ const MASSIMO_DOMANDE_DIAGNOSTICA = 16;
 const TIMEOUT_PIANO_MS = 30000;
 const TIMEOUT_FILTRO_MS = 25000;
 
+function estraiJsonBilanciato(s) {
+  for (let inizio = 0; inizio < s.length; inizio += 1) {
+    if (s[inizio] !== '{' && s[inizio] !== '[') continue;
+    const stack = [];
+    let stringa = false;
+    let escape = false;
+    for (let i = inizio; i < s.length; i += 1) {
+      const c = s[i];
+      if (stringa) {
+        if (escape) escape = false;
+        else if (c === '\\') escape = true;
+        else if (c === '"') stringa = false;
+        continue;
+      }
+      if (c === '"') { stringa = true; continue; }
+      if (c === '{' || c === '[') stack.push(c);
+      else if (c === '}' || c === ']') {
+        const aperta = stack.pop();
+        if ((aperta === '{' && c !== '}') || (aperta === '[' && c !== ']')) break;
+        if (stack.length === 0) {
+          try { return JSON.parse(s.slice(inizio, i + 1)); } catch { break; }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function provaJson(testoRaw) {
   if (typeof testoRaw !== 'string') return null;
   let s = testoRaw.trim();
   if (!s) return null;
   s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try { return JSON.parse(s); } catch { /* prova estrazione */ }
-  const primo = s.indexOf('{');
-  const ultimo = s.lastIndexOf('}');
-  if (primo >= 0 && ultimo > primo) {
-    try { return JSON.parse(s.slice(primo, ultimo + 1)); } catch { /* niente */ }
+  return estraiJsonBilanciato(s);
+}
+
+function sembraRispostaUtile(x) {
+  return x && typeof x === 'object' && !Array.isArray(x) && (
+    Array.isArray(x.strategie) || Array.isArray(x.candidati) || Array.isArray(x.risultati)
+  );
+}
+
+function cercaJsonRicorsivo(valore, profondita = 0, visti = new Set()) {
+  if (valore == null || profondita > 5) return null;
+  if (typeof valore === 'string') {
+    const letto = provaJson(valore);
+    return letto ? cercaJsonRicorsivo(letto, profondita + 1, visti) || letto : null;
+  }
+  if (typeof valore !== 'object') return null;
+  if (visti.has(valore)) return null;
+  visti.add(valore);
+  if (sembraRispostaUtile(valore)) return valore;
+  if (Array.isArray(valore)) {
+    for (const x of valore) {
+      const trovato = cercaJsonRicorsivo(x, profondita + 1, visti);
+      if (trovato) return trovato;
+    }
+    return null;
+  }
+  const priorita = ['response', 'output_text', 'result', 'choices', 'content', 'text', 'message', 'data', 'output'];
+  for (const k of priorita) {
+    if (!(k in valore)) continue;
+    const trovato = cercaJsonRicorsivo(valore[k], profondita + 1, visti);
+    if (trovato) return trovato;
+  }
+  for (const x of Object.values(valore)) {
+    const trovato = cercaJsonRicorsivo(x, profondita + 1, visti);
+    if (trovato) return trovato;
   }
   return null;
 }
 
 function leggiJson(raw) {
-  if (!raw) return null;
-  if (typeof raw === 'object' && !Array.isArray(raw)) {
-    if (Array.isArray(raw.strategie) || Array.isArray(raw.candidati) || Array.isArray(raw.risultati)) return raw;
-    if (raw.response && typeof raw.response === 'object') return raw.response;
-  }
-  const tentativi = [
-    raw?.response,
-    raw?.output_text,
-    raw?.result,
-    raw?.choices?.[0]?.message?.content,
-    raw?.content?.[0]?.text,
-    raw?.content
-  ];
-  for (const candidato of tentativi) {
-    const letto = provaJson(candidato);
-    if (letto) return letto;
-  }
-  return null;
+  return cercaJsonRicorsivo(raw);
 }
 
 function testo(valore, massimo = 300) {
@@ -86,6 +128,39 @@ async function conTimeout(promessa, millisecondi, etichetta) {
   }
 }
 
+function strategieDaAgenda({ titolo, artista, lingua, paese, domandeAgenda = [], strategieGiaUsate = [] }) {
+  const giaUsate = new Set((strategieGiaUsate || []).map(s => `${String(s.provider || '').toLowerCase()}::${normalizza(s.query)}`));
+  const base = [titolo, artista].filter(Boolean).join(' ').trim();
+  const risultato = [];
+  const aggiungi = (provider, query, priorita, linguaStrategia = lingua, paeseStrategia = paese) => {
+    const q = testo(query, 300);
+    const chiave = `${provider}::${normalizza(q)}`;
+    if (!q || giaUsate.has(chiave) || risultato.some(x => `${x.provider}::${normalizza(x.query)}` === chiave)) return;
+    risultato.push({ provider, query: q, lingua: linguaStrategia || null, paese: paeseStrategia || null, priorita });
+  };
+
+  for (const d of domandeAgenda) {
+    const id = normalizza(d.id);
+    const obiettivo = testo(d.obiettivo || d.domanda, 120);
+    const localita = id.includes('francia') ? 'francese francophone adaptation'
+      : id.includes('spagna') ? 'spanish español latino adaptation traducción'
+      : id.includes('tedesc') ? 'german deutsch adaptation'
+      : id.includes('portog') || id.includes('brasil') ? 'portuguese português brasil adaptation'
+      : id.includes('ingles') || id.includes('usa') ? 'english version adaptation'
+      : id.includes('italia') ? 'cover italiana versione'
+      : obiettivo;
+    aggiungi('cataloghi', `${base} ${localita}`, 92);
+    aggiungi('internet_archive', `${base} ${localita}`, 78);
+    if (risultato.length >= MASSIMO_STRATEGIE_TORNATA) break;
+  }
+
+  if (!risultato.length) {
+    aggiungi('cataloghi', `${base} cover version adaptation`, 90);
+    aggiungi('internet_archive', `${base} cover version adaptation`, 76);
+  }
+  return risultato.slice(0, MASSIMO_STRATEGIE_TORNATA);
+}
+
 export function estraiCandidatiDeterministici(originale, elementi = []) {
   const titoloOriginale = testo(originale?.titolo, 250);
   const titoloAtteso = normalizza(titoloOriginale);
@@ -100,14 +175,8 @@ export function estraiCandidatiDeterministici(originale, elementi = []) {
     if (!titoloFonte) continue;
 
     const esatto = titoloFonte === titoloAtteso;
-    const contiene = !esatto && (
-      titoloFonte.includes(titoloAtteso) || titoloAtteso.includes(titoloFonte)
-    );
+    const contiene = !esatto && (titoloFonte.includes(titoloAtteso) || titoloAtteso.includes(titoloFonte));
     if (!esatto && !contiene) continue;
-
-    // Il fallback automatico richiede un interprete strutturato dalla fonte.
-    // Un autore di canale/upload non viene mai trasformato automaticamente
-    // nell interprete della cover: quello resta compito dell AI e della verifica.
     const interprete = testo(e.interprete, 200);
     if (!interprete) continue;
     if (artistaOriginale && normalizza(interprete) === artistaOriginale) continue;
@@ -159,8 +228,18 @@ export async function generaPianoScopertaConIA({
   candidatiGiaNoti = [],
   agenda = null
 }, env) {
+  const domandeAgenda = (Array.isArray(agenda?.domande) ? agenda.domande : [])
+    .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
+    .map(d => ({ id: testo(d?.id, 120), domanda: testo(d?.domanda, 500), obiettivo: testo(d?.obiettivo, 200) }))
+    .filter(d => d.domanda);
+  const fallbackAgenda = () => strategieDaAgenda({ titolo, artista, lingua, paese, domandeAgenda, strategieGiaUsate });
+
   if (!env?.AI?.run) {
-    return { disponibile: false, strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [], esaurita: false };
+    return {
+      disponibile: false,
+      strategie: fallbackAgenda(), candidati: [], domandeEsplorate: domandeAgenda.map(d => d.id), nuoveDomande: [],
+      esaurita: false, recupero: 'strategie_agenda_senza_ai'
+    };
   }
 
   const esclusioniStrategie = strategieGiaUsate
@@ -169,10 +248,6 @@ export async function generaPianoScopertaConIA({
   const esclusioniCandidati = candidatiGiaNoti
     .slice(0, MASSIMO_CANDIDATI_CONTESTO)
     .map(c => ({ titolo: c.titolo, interprete: c.interprete, anno: c.anno, lingua: c.lingua, paese: c.paese }));
-  const domandeAgenda = (Array.isArray(agenda?.domande) ? agenda.domande : [])
-    .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
-    .map(d => ({ id: testo(d?.id, 120), domanda: testo(d?.domanda, 500), obiettivo: testo(d?.obiettivo, 200) }))
-    .filter(d => d.domanda);
 
   const messaggi = [
     {
@@ -224,8 +299,8 @@ export async function generaPianoScopertaConIA({
   } catch (e) {
     return {
       disponibile: true,
-      strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [],
-      esaurita: false, errore: e?.message || 'Errore AI non specificato'
+      strategie: fallbackAgenda(), candidati: [], domandeEsplorate: domandeAgenda.map(d => d.id), nuoveDomande: [],
+      esaurita: false, recupero: 'fallback_agenda', avviso: e?.message || 'Errore AI non specificato'
     };
   }
 
@@ -233,8 +308,8 @@ export async function generaPianoScopertaConIA({
   if (!dati) {
     return {
       disponibile: true,
-      strategie: [], candidati: [], domandeEsplorate: [], nuoveDomande: [],
-      esaurita: false, errore: 'RISPOSTA_AI_NON_INTERPRETABILE'
+      strategie: fallbackAgenda(), candidati: [], domandeEsplorate: domandeAgenda.map(d => d.id), nuoveDomande: [],
+      esaurita: false, recupero: 'fallback_agenda', avviso: 'RISPOSTA_AI_NON_INTERPRETABILE'
     };
   }
 
@@ -279,11 +354,12 @@ export async function generaPianoScopertaConIA({
 
   return {
     disponibile: true,
-    strategie,
+    strategie: strategie.length ? strategie : fallbackAgenda(),
     candidati,
-    domandeEsplorate,
+    domandeEsplorate: domandeEsplorate.length ? domandeEsplorate : domandeAgenda.map(d => d.id),
     nuoveDomande,
-    esaurita: dati.esaurita === true
+    esaurita: dati.esaurita === true,
+    ...(strategie.length ? {} : { recupero: 'fallback_agenda_vuota' })
   };
 }
 

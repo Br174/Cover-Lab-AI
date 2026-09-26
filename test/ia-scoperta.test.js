@@ -136,7 +136,7 @@ test('il parser recupera JSON utile anche dentro wrapper annidati e testo extra'
     titolo: 'Sapore di sale', artista: 'Gino Paoli',
     agenda: { domande: [{ id: 'francia', domanda: 'Versioni francesi?', obiettivo: 'Francia' }] }
   }, env);
-  assert.equal(piano.avviso, undefined);
+  assert.match(piano.avviso || '', /NESSUN_CANDIDATO_SPECIFICO_RECUPERATO/);
   assert.equal(piano.strategie.length, 1);
   assert.equal(piano.strategie[0].provider, 'cataloghi');
   assert.deepEqual(piano.domandeEsplorate, ['francia']);
@@ -154,7 +154,8 @@ test('se la risposta AI non e interpretabile l agenda genera strategie ma nessun
     }
   }, env);
   assert.equal(piano.recupero, 'fallback_agenda');
-  assert.equal(piano.avviso, 'RISPOSTA_AI_NON_INTERPRETABILE');
+  assert.match(piano.avviso || '', /RISPOSTA_AI_NON_INTERPRETABILE/);
+  assert.match(piano.avviso || '', /NESSUN_CANDIDATO_SPECIFICO_RECUPERATO/);
   assert.ok(piano.strategie.length >= 2);
   assert.equal(piano.candidati.length, 0, 'il fallback non inventa candidati');
   assert.deepEqual(piano.domandeEsplorate, ['spagna_latam', 'francia']);

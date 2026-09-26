@@ -1,12 +1,3 @@
-const RUOLI_ESSENZIALI = new Set([
-  'compositore',
-  'paroliere',
-  'autore',
-  'traduttore',
-  'adattatore',
-  'arrangiatore'
-]);
-
 const STATI_NON_CERTI = new Set([
   'da_verificare',
   'verifica_parziale',
@@ -15,15 +6,14 @@ const STATI_NON_CERTI = new Set([
   'verifica_crediti_insufficiente'
 ]);
 
-function normalizzaRuolo(valore = '') {
-  return String(valore).trim().toLowerCase().replace(/\s+/g, '_');
-}
-
-function creditiEssenziali(crediti = []) {
-  return (crediti || []).filter(c =>
-    c?.nome && RUOLI_ESSENZIALI.has(normalizzaRuolo(c.ruolo))
-  );
-}
+const FONTI_FORTI = new Set([
+  'musicbrainz',
+  'wikipedia',
+  'wikimedia',
+  'apple_catalogo',
+  'artista_ufficiale',
+  'etichetta_ufficiale'
+]);
 
 function fontiIndipendenti(fonti = []) {
   return new Set(
@@ -61,8 +51,6 @@ export function valutaAmmissioneArchivio({
     };
   }
 
-  // L'originale serve come riferimento della composizione ma non deve gonfiare
-  // il conteggio delle cover certificate dell'Archivio.
   if (tipo === 'originale') {
     return {
       ammessa: false,
@@ -71,21 +59,24 @@ export function valutaAmmissioneArchivio({
     };
   }
 
-  if (tipo === 'dubbio' || affidabilita < 90 || !verificaAbbastanzaForte(versione, verificaStrutturata)) {
+  if (tipo === 'dubbio' || tipo === 'non correlato' || affidabilita < 90 || !verificaAbbastanzaForte(versione, verificaStrutturata)) {
     return {
       ammessa: false,
       statoArchivio: 'in_verifica',
-      motivo: 'La relazione con l opera non ha ancora un livello di verifica sufficiente per l Archivio certificato.'
+      motivo: 'La relazione con l opera non ha ancora un livello di verifica sufficiente.'
     };
   }
 
-  const essenzialiVersione = [
-    ...creditiEssenziali(creditiVersione),
-    ...creditiEssenziali(versione.creditiOpera || []),
-    ...creditiEssenziali(versione.crediti || [])
-  ];
-  const essenzialiComposizione = creditiEssenziali(creditiComposizione);
+  const provider = fontiIndipendenti(fonti);
+  if (!provider.size) {
+    return {
+      ammessa: false,
+      statoArchivio: 'in_verifica',
+      motivo: 'Manca ancora una fonte reale che documenti l esistenza della versione.'
+    };
+  }
 
+  const fonteForte = [...provider].some(p => FONTI_FORTI.has(p));
   const relazioneStrutturata = Boolean(
     verificaStrutturata?.verificato === true ||
     versione.idOperaMusicBrainz ||
@@ -94,57 +85,45 @@ export function valutaAmmissioneArchivio({
     versione.derivazione === true ||
     versione.derivazioneTradotta === true
   );
+  const creditiTotali = [...(creditiVersione || []), ...(creditiComposizione || [])].filter(c => c?.nome);
+  const creditiAI = creditiTotali.filter(c => String(c?.fonte || '').toLowerCase() === 'ai_arricchimento').length;
 
-  const provider = fontiIndipendenti(fonti);
-  const relazioneMultifonte = provider.size >= 2 && affidabilita >= 90;
-
+  let motivo;
   if (relazioneStrutturata) {
-    const essenziali = [...essenzialiVersione, ...essenzialiComposizione];
-    if (!essenziali.length) {
-      return {
-        ammessa: false,
-        statoArchivio: 'in_verifica',
-        motivo: 'La relazione con l opera e strutturata, ma mancano ancora crediti essenziali documentati.'
-      };
-    }
-    return {
-      ammessa: true,
-      statoArchivio: 'archiviata',
-      motivo: 'Relazione strutturata verificata con l opera e crediti essenziali documentati.',
-      creditiEssenziali: essenziali
-    };
+    motivo = 'Relazione con l opera verificata da una fonte strutturata.';
+  } else if (fonteForte) {
+    motivo = 'Versione documentata da una fonte attendibile e verificata dal motore.';
+  } else if (provider.has('youtube')) {
+    motivo = 'Versione documentata da YouTube e confermata dalla verifica intelligente del motore.';
+  } else {
+    motivo = `Versione confermata dal motore su ${provider.size} fonte/i reali.`;
   }
 
-  if (relazioneMultifonte && essenzialiVersione.length) {
-    return {
-      ammessa: true,
-      statoArchivio: 'archiviata',
-      motivo: `Relazione confermata da ${provider.size} fonti indipendenti e crediti essenziali specifici della versione.`,
-      creditiEssenziali: essenzialiVersione
-    };
-  }
-
-  if (!essenzialiVersione.length) {
-    return {
-      ammessa: false,
-      statoArchivio: 'in_verifica',
-      motivo: 'Mancano crediti essenziali specifici della versione e non esiste ancora una relazione strutturata sufficientemente verificata.'
-    };
+  if (!creditiTotali.length) {
+    motivo += ' I crediti mancanti saranno arricchiti progressivamente e non bloccano l Archivio.';
+  } else if (creditiAI > 0) {
+    motivo += ` ${creditiAI} credito/i sono stati aggiunti come arricchimento AI e restano rivalidabili.`;
   }
 
   return {
-    ammessa: false,
-    statoArchivio: 'in_verifica',
-    motivo: 'I crediti esistono, ma il legame con la composizione non e ancora verificato da prove sufficienti.'
+    ammessa: true,
+    statoArchivio: 'archiviata',
+    motivo,
+    creditiDisponibili: creditiTotali.length,
+    creditiDaAI: creditiAI,
+    arricchimentoProgressivo: true
   };
 }
 
 export function descriviRegolaArchivio() {
   return {
-    regola: 'relazione_verificata_e_crediti_essenziali',
+    regola: 'fonte_reale_verifica_e_arricchimento_progressivo',
     sogliaMinimaAffidabilita: 90,
     originaliConteggiatiComeCover: false,
-    ruoliEssenziali: [...RUOLI_ESSENZIALI],
-    candidatiNonAmmessi: 'restano_in_verifica_e_non_compaiono_nell_archivio_ufficiale'
+    creditiMancantiBloccanoArchivio: false,
+    fontiForti: [...FONTI_FORTI],
+    youtube: 'ammissibile_dopo_verifica_intelligente',
+    creditiAI: 'ammessi_come_arricchimento_rivalidabile',
+    candidatiNonAmmessi: 'solo_senza_fonte_reale_o_con_relazione_ancora_dubbia'
   };
 }

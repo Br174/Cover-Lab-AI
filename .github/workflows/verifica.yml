@@ -37,3 +37,16 @@ jobs:
         run: npx wrangler deploy --dry-run
         env:
           WRANGLER_SEND_METRICS: 'false'
+
+      - name: Configura Java per Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configura Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compila APK diagnostico LAB
+        working-directory: android
+        run: gradle :app:assembleDebug

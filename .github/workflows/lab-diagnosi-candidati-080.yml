@@ -12,12 +12,14 @@ jobs:
   diagnosi:
     runs-on: ubuntu-latest
     steps:
-      - name: Leggi candidati e motivi dal preview LAB
+      - name: Leggi candidati e prova fonte cover strutturata
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
           sleep 30
+
+          echo "--- DIAGNOSTICA LAB ---"
           curl --silent --show-error --max-time 40 \
             "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli" \
             -o /tmp/diag.json
@@ -37,4 +39,23 @@ jobs:
           print('\nPROVE CANDIDATI/ARCHIVIO')
           for p in d.get('prove') or []:
               print(json.dumps(p,ensure_ascii=False))
+          PY
+
+          echo "--- PROVA SECONDHANDSONGS JSON SENZA CHIAVE ---"
+          HTTP=$(curl --silent --show-error --max-time 30 \
+            -H 'Accept: application/json' \
+            -A 'CoverLabAI/0.8.0 (+https://github.com/Br174/Cover-Lab-AI)' \
+            -o /tmp/shs.json -w '%{http_code}' \
+            'https://secondhandsongs.com/search/work?title=Sapore%20di%20sale' || true)
+          echo "HTTP SecondHandSongs: $HTTP"
+          head -c 8000 /tmp/shs.json || true
+          echo
+          python - <<'PY'
+          import json
+          try:
+              d=json.load(open('/tmp/shs.json',encoding='utf-8'))
+              print('JSON valido SecondHandSongs; tipo=',type(d).__name__)
+              if isinstance(d,dict): print('chiavi=',list(d)[:30])
+          except Exception as e:
+              print('Risposta non JSON:',e)
           PY

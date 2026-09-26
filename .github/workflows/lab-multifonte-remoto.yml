@@ -48,6 +48,8 @@ jobs:
           assert d.get('lottoMusicLab') == 20, d
           regola=d.get('archivioCertificato') or {}
           assert regola.get('regola') == 'relazione_verificata_e_crediti_essenziali', regola
+          assert regola.get('sogliaMinimaAffidabilita') == 90, regola
+          assert regola.get('originaliConteggiatiComeCover') is False, regola
           print('OK: motore 0.8.0 e regola Archivio certificato esposti.')
           PY
 
@@ -68,14 +70,15 @@ jobs:
           import json
           d=json.load(open('/tmp/stats.json',encoding='utf-8'))
           assert d.get('stato') == 'pronto', d
-          for k in ('braniPresenti','versioniArchiviate','nuoveUltimoAggiornamento'):
+          for k in ('braniPresenti','versioniArchiviate','versioniInVerifica','nuoveUltimoAggiornamento'):
               assert isinstance(d.get(k), int), (k,d)
-          print('Archivio:', d.get('braniPresenti'), 'brani /', d.get('versioniArchiviate'), 'versioni certificate')
+          assert d.get('nuoveUltimoAggiornamento',0) <= d.get('versioniArchiviate',0), d
+          print('Archivio:', d.get('braniPresenti'), 'brani /', d.get('versioniArchiviate'), 'versioni certificate /', d.get('versioniInVerifica'), 'in verifica')
           PY
 
           echo "--- RICERCA ARCHIVIO MIRATA ---"
           CODICE_AC=$(curl --silent --show-error --max-time 20 -o /tmp/ac.json -w '%{http_code}' \
-            "$BASE/api/archivio/cerca?q=nel%20blu%20dipinto%20di%20blu" || true)
+            "$BASE/api/archivio/cerca?q=sapore%20di%20sale" || true)
           echo "HTTP ricerca Archivio: $CODICE_AC"
           cat /tmp/ac.json || true
           echo
@@ -108,18 +111,24 @@ jobs:
           c=comp.get('crediti') or []
           assert len(c) > 0, comp
           versioni=d.get('versioni') or []
-          assert len(versioni) >= 2, ('troppo pochi risultati per il collaudo',len(versioni),d)
+          assert len(versioni) >= 1, ('nessuna cover certificata nel dossier',d)
           ess={'compositore','paroliere','autore','traduttore','adattatore','arrangiatore'}
-          ricchi=0
           for v in versioni:
               assert v.get('provenienzaRisultato') in ('archivio','ricerca'), v
+              assert v.get('statoArchivio') == 'archiviata', v
+              assert str(v.get('tipo','')).lower() not in ('originale','dubbio'), v
+              assert int(v.get('affidabilita') or 0) >= 90, v
+              assert str(v.get('statoVerifica','')).lower().startswith('verificato'), v
               cred=v.get('crediti') or []
-              if any(str(x.get('ruolo','')).lower() in ess for x in cred): ricchi+=1
+              assert any(str(x.get('ruolo','')).lower() in ess for x in cred), ('crediti essenziali assenti',v)
               assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
-          assert ricchi > 0, ('nessuna versione espone crediti essenziali',versioni)
-          print('Sapore di sale:',len(versioni),'versioni nella risposta; con crediti essenziali:',ricchi)
+          giro=d.get('giroDiagnostico') or {}
+          verifica=giro.get('verifica') or {}
+          assert verifica.get('stato') != 'migrazione_verifica_non_applicata', verifica
+          print('Sapore di sale:',len(versioni),'cover certificate nella risposta')
           print('Provenienza:',d.get('conteggioProvenienza'))
           print('In verifica:',d.get('inVerifica',d.get('nuoveInVerificaNelGiro',0)))
+          print('Verifica multifonte:',verifica)
           PY
 
           echo "--- DIAGNOSTICA MOTORE ---"
@@ -139,6 +148,7 @@ jobs:
           assert isinstance(d.get('strategie'), list), d
           assert isinstance(d.get('prove'), list), d
           assert 'registaAI' in d, d
+          assert len(d.get('provider') or []) > 0, d
           for f in d.get('fonti') or []:
               assert 'haContribuitoAllArchivio' in f, f
           print('Diagnostica: provider',len(d.get('provider') or []),'fonti',len(d.get('fonti') or []),'prove',len(d.get('prove') or []))

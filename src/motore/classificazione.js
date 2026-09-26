@@ -1,4 +1,4 @@
-import { normalizzaTesto, testoSimile } from './normalizzazione.js';
+import { normalizzaTesto, titoloMusicaleSimile } from './normalizzazione.js';
 
 const TIPI = new Set([
   'cover', 'adattamento', 'live', 'strumentale', 'remix', 'karaoke',
@@ -14,7 +14,6 @@ export function classificaDaMetadati(candidato, originale) {
   const attributi = (candidato.attributi || []).map(normalizzaTesto);
   const titolo = normalizzaTesto(candidato.titolo);
   const interprete = normalizzaTesto(candidato.interprete);
-  const titoloOriginale = normalizzaTesto(originale.titolo);
   const artistaOriginale = normalizzaTesto(originale.artista);
 
   if (attributi.includes('karaoke') || titolo.includes('karaoke')) {
@@ -31,7 +30,7 @@ export function classificaDaMetadati(candidato, originale) {
   }
 
   const stessoArtista = interprete === artistaOriginale && artistaOriginale.length > 0;
-  const titoloCompatibile = testoSimile(titolo, titoloOriginale);
+  const titoloCompatibile = titoloMusicaleSimile(candidato.titolo, originale.titolo);
 
   if (stessoArtista && titoloCompatibile) {
     const primoAnno = Number(originale.anno || 0);
@@ -63,7 +62,7 @@ export function applicaAdattamentoSeNecessario(classificazione, candidato, origi
   if (!candidato.stessaComposizione) return classificazione;
   const lingua = normalizzaTesto(candidato.lingua);
   const linguaOriginale = normalizzaTesto(originale.lingua);
-  const titoloDiverso = !testoSimile(candidato.titolo, originale.titolo);
+  const titoloDiverso = !titoloMusicaleSimile(candidato.titolo, originale.titolo);
   const linguaDiversa = lingua && linguaOriginale && lingua !== linguaOriginale;
 
   if (candidato.derivazioneTradotta || linguaDiversa || titoloDiverso && candidato.derivazione) {

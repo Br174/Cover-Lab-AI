@@ -1,9 +1,9 @@
 {
   "name": "cover-lab-ai",
-  "version": "0.2.0",
+  "version": "0.7.2",
   "private": true,
   "type": "module",
-  "description": "Motore italiano per individuare, classificare e catalogare versioni di composizioni musicali.",
+  "description": "Motore AI multi-fonte per individuare, verificare e catalogare quante piu versioni possibili di composizioni musicali.",
   "scripts": {
     "test": "node --test",
     "sviluppo": "wrangler dev",

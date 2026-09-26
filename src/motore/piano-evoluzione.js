@@ -1,0 +1,174 @@
+// Piano ufficiale del motore Cover Lab AI.
+// Questo file non e' una semplice nota: rappresenta il perimetro approvato
+// delle evoluzioni che devono essere realizzate e mantenute nel motore.
+
+export const VERSIONE_PIANO = '0.7.0';
+
+export const PRIORITA_COVER_LAB = Object.freeze([
+  'velocita_dei_risultati',
+  'quantita_dei_risultati',
+  'scansione_web_e_piattaforme_con_risultati_concreti',
+  'integrazione_affidabile_con_piu_servizi',
+  'affidabilita_reale_delle_cover'
+]);
+
+export const STATO_PIANO = Object.freeze({
+  IMPLEMENTATA: 'implementata',
+  PARZIALE: 'parziale',
+  DA_FARE: 'da_fare'
+});
+
+export const PIANO_EVOLUZIONE = Object.freeze([
+  {
+    id: 'provider_standardizzati',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Tutte le fonti dialogano con il motore tramite un contratto comune e un registro provider.',
+    impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'source_router',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Scegliere e ordinare le fonti in base a disponibilita, salute, latenza e utilita.',
+    impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'circuit_breaker_fallback_retry',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Una fonte guasta o lenta non deve bloccare la ricerca e non deve produrre falsi zero risultati.',
+    impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'health_fonti',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Conoscere lo stato reale di ogni provider: sano, degradato, sospeso o da configurare.',
+    impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'metriche_provider',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Misurare latenza, errori, resa e risultati utili di ogni fonte per migliorare il routing.',
+    impatto: ['velocita_dei_risultati', 'quantita_dei_risultati']
+  },
+  {
+    id: 'ricerca_iterativa_autoespansiva',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Le scoperte devono generare nuove piste, query, lingue, titoli alternativi e ulteriori ricerche fino a saturazione pratica temporanea.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti']
+  },
+  {
+    id: 'regista_ai_autointerrogazione_guidata',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Prima di cercare sulle fonti, l AI si autointerroga sistematicamente su versioni, paesi, lingue, titoli alternativi, interpreti e crediti; usa la propria conoscenza per generare ipotesi e piste, poi cerca conferme reali prima della promozione.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti', 'affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'nessun_limite_totale_cover',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Non esiste un limite numerico predefinito alle cover archiviate. I limiti riguardano solo durata e carico della singola tornata; l Archivio Vivo continua nei giri successivi e Music Lab visualizza 20 risultati alla volta.',
+    impatto: ['quantita_dei_risultati', 'velocita_dei_risultati']
+  },
+  {
+    id: 'strategie_deterministiche_di_base',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Cover Lab deve sapere cercare anche senza AI, usando query di base robuste e prevedibili.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti']
+  },
+  {
+    id: 'memoria_strategie_e_risultati',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Ricordare cosa e stato cercato, cosa ha funzionato, cosa ha fallito e quali risultati sono gia noti.',
+    impatto: ['velocita_dei_risultati', 'quantita_dei_risultati']
+  },
+  {
+    id: 'freshness_intelligente',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Restituire subito la memoria valida e riaprire periodicamente la ricerca per scoprire novita.',
+    impatto: ['velocita_dei_risultati', 'quantita_dei_risultati']
+  },
+  {
+    id: 'anti_zero_risultati',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Zero da una singola fonte non significa zero cover: attivare fonti e strategie alternative prima di concludere.',
+    impatto: ['quantita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'verifica_multifonte',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Una cover deve essere promossa solo quando esistono prove reali sufficienti e coerenti.',
+    impatto: ['affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'confidence_e_stato_verifica_separati',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Separare il livello di confidenza dalla condizione oggettiva della verifica.',
+    impatto: ['affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'gestione_conflitti',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Le discordanzie tra fonti devono attivare una indagine: l AI formula le possibili spiegazioni, genera domande e ricerche mirate, distingue concetti diversi come composizione, pubblicazione e prima registrazione, e risolve il dato quando trova conferme sufficienti. Solo se le prove restano insufficienti il dato rimane incerto.',
+    impatto: ['affidabilita_reale_delle_cover', 'scansione_web_e_piattaforme_con_risultati_concreti']
+  },
+  {
+    id: 'deduplicazione_avanzata',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Distinguere duplicato certo, probabile duplicato e versione realmente distinta senza perdere cover valide. Solo i duplicati certi vengono fusi; quelli probabili restano archiviati e segnalati per ulteriore verifica.',
+    impatto: ['quantita_dei_risultati', 'affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'self_check_risultati',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Controllare automaticamente coerenza, anomalie, regressioni, conflitti, copertura monofonte e risultati sospettosamente bassi; quando necessario attivare ulteriore ricerca multi-fonte in background.',
+    impatto: ['quantita_dei_risultati', 'affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'autodiagnosi_risultati_poveri',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Quando una ricerca produce troppo poco rispetto alle aspettative, capire quale fonte o strategia ha fallito e reagire.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti']
+  },
+  {
+    id: 'conservazione_dati_grezzi_utili',
+    stato: STATO_PIANO.DA_FARE,
+    obiettivo: 'Conservare solo i dati grezzi utili e compatti per poter rielaborare risultati senza ripetere inutilmente le chiamate esterne.',
+    impatto: ['velocita_dei_risultati', 'affidabilita_reale_delle_cover']
+  },
+  {
+    id: 'espansione_fonti',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'Integrare progressivamente piu fonti gratuite e lecite: Apple, YouTube, MusicBrainz, Internet Archive e future fonti Web/cataloghi.',
+    impatto: ['quantita_dei_risultati', 'scansione_web_e_piattaforme_con_risultati_concreti', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'policy_media_music_lab',
+    stato: STATO_PIANO.IMPLEMENTATA,
+    obiettivo: 'Cover Lab usa le piattaforme per dati e prove, non riproduce o scarica media. Se trova direttamente una cover su YouTube passa anche il riferimento gia trovato a Music Lab; non cerca apposta YouTube per cover scoperte altrove.',
+    impatto: ['velocita_dei_risultati', 'integrazione_affidabile_con_piu_servizi']
+  },
+  {
+    id: 'interfaccia_diagnostica_metadata',
+    stato: STATO_PIANO.PARZIALE,
+    obiettivo: 'L APK Cover Lab dispone della barra unica di ricerca libera e mostra originale e cover con metadati, senza riprodurre audio o video. Codice e compilazione sono verificati; resta il collaudo end-to-end contro una LAB remota aggiornata.',
+    impatto: ['velocita_dei_risultati', 'quantita_dei_risultati', 'affidabilita_reale_delle_cover']
+  }
+]);
+
+export function riepilogoPianoEvoluzione() {
+  const conteggi = {
+    implementate: 0,
+    parziali: 0,
+    daFare: 0
+  };
+  for (const voce of PIANO_EVOLUZIONE) {
+    if (voce.stato === STATO_PIANO.IMPLEMENTATA) conteggi.implementate += 1;
+    else if (voce.stato === STATO_PIANO.PARZIALE) conteggi.parziali += 1;
+    else conteggi.daFare += 1;
+  }
+  return {
+    versionePiano: VERSIONE_PIANO,
+    priorita: PRIORITA_COVER_LAB,
+    totale: PIANO_EVOLUZIONE.length,
+    ...conteggi,
+    voci: PIANO_EVOLUZIONE
+  };
+}

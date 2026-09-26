@@ -1,7 +1,11 @@
 import { individuaComposizione, elencaRegistrazioniOpera, approfondisciOpereDerivate } from '../fonti/musicbrainz.js';
+import { creaRegistroProvider } from '../fonti/provider-registry.js';
 import { classificaDaMetadati, applicaAdattamentoSeNecessario } from './classificazione.js';
 import { deduplicaVersioni } from './deduplicazione.js';
 import { verificaCandidatiConIA } from './verifica-intelligente.js';
+import { normalizzaTesto } from './normalizzazione.js';
+import { eseguiOperazioneProvider } from './source-router.js';
+import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
 import { trovaComposizione, salvaComposizione, salvaVersioni, caricaVersioni, registraRicerca, salvaOpereCollegate } from '../dati/archivio.js';
 
 function composizioneDaRiga(riga) {
@@ -27,6 +31,17 @@ function ordina(versioni, ordine) {
   });
 }
 
+function completaAnnoOriginale(scoperta, registrazioni, artistaRichiesto) {
+  if (scoperta.annoOriginale) return scoperta;
+  const artista = normalizzaTesto(artistaRichiesto);
+  const anni = (registrazioni || [])
+    .filter(r => normalizzaTesto(r.interprete) === artista)
+    .map(r => Number(r.anno || 0))
+    .filter(a => a > 0);
+  if (anni.length) scoperta.annoOriginale = Math.min(...anni);
+  return scoperta;
+}
+
 function classificaElenco(elenco, riferimento) {
   return elenco.map(candidato => {
     const base = classificaDaMetadati(candidato, riferimento);
@@ -41,11 +56,67 @@ function classificaElenco(elenco, riferimento) {
   });
 }
 
+async function configurazioneSicura(db) {
+  try {
+    return await leggiConfigurazioneArchivioVivo(db);
+  } catch {
+    return {};
+  }
+}
+
+function fetchConSegnale(fetchFn, signal) {
+  return (url, opzioni = {}) => fetchFn(url, { ...opzioni, ...(signal ? { signal } : {}) });
+}
+
+async function usaMusicBrainz({ db, env, configurazione, fetchFn, operazione, contaRisultati }) {
+  const provider = creaRegistroProvider(env).get('musicbrainz');
+  return eseguiOperazioneProvider({
+    db,
+    provider,
+    configurazione,
+    operazione: ({ signal }) => operazione(fetchConSegnale(fetchFn, signal)),
+    contaRisultati
+  });
+}
+
+async function memoriaDegradata(db, riga, ordine, inizio, motivo) {
+  if (!riga) return null;
+  const versioni = await caricaVersioni(db, riga.id, ordine);
+  return {
+    stato: 'pronto',
+    provenienza: 'memoria dei risultati - fonte esterna degradata',
+    composizione: composizioneDaRiga(riga),
+    versioniIndividuate: versioni.length,
+    versioni,
+    durataMs: Date.now() - inizio,
+    analisiCompleta: false,
+    approfondimentoDisponibile: true,
+    aggiornamentoInAttesa: true,
+    motivoAggiornamentoInAttesa: motivo || 'Fonte esterna temporaneamente non disponibile.'
+  };
+}
+
+function rispostaRicercaIncompleta(titolo, artista, inizio, motivo) {
+  return {
+    stato: 'ricerca_incompleta',
+    provenienza: 'ricerca multi-fonte necessaria',
+    composizione: { titolo, artista },
+    versioniIndividuate: 0,
+    versioni: [],
+    durataMs: Date.now() - inizio,
+    analisiCompleta: false,
+    approfondimentoDisponibile: true,
+    ricercaMultifonteNecessaria: true,
+    motivo: motivo || 'La fonte strutturata non ha fornito dati sufficienti.'
+  };
+}
+
 export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfondisci = false }, env, opzioni = {}) {
   const inizio = Date.now();
   const db = env.DB;
-  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.2.0';
+  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.7.2';
   const fetchFn = opzioni.fetchFn || fetch;
+  const configurazione = await configurazioneSicura(db);
 
   const giaNota = await trovaComposizione(db, titolo, artista);
   if (giaNota && !approfondisci) {
@@ -67,24 +138,62 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
     };
   }
 
-  const scoperta = await individuaComposizione(titolo, artista, fetchFn);
-  if (!scoperta) {
-    return {
-      stato: 'non_trovato',
-      provenienza: 'ricerca',
-      composizione: { titolo, artista },
-      versioniIndividuate: 0,
-      versioni: [],
-      durataMs: Date.now() - inizio,
-      analisiCompleta: false,
-      approfondimentoDisponibile: false
-    };
+  const esitoScoperta = await usaMusicBrainz({
+    db,
+    env,
+    configurazione,
+    fetchFn,
+    operazione: fetchControllato => individuaComposizione(titolo, artista, fetchControllato),
+    contaRisultati: scoperta => scoperta ? 1 : 0
+  });
+
+  if (esitoScoperta.stato !== 'ok') {
+    const memoria = await memoriaDegradata(db, giaNota, ordine, inizio, esitoScoperta.errore || esitoScoperta.stato);
+    if (memoria) return memoria;
+    return rispostaRicercaIncompleta(
+      titolo,
+      artista,
+      inizio,
+      esitoScoperta.errore || 'MusicBrainz temporaneamente non disponibile.'
+    );
   }
 
-  const elencoBase = await elencaRegistrazioniOpera(scoperta.idMusicBrainz, fetchFn, 100, 0, {
-    titolo: scoperta.titoloCanonico,
-    lingua: scoperta.linguaOriginale
+  const scoperta = esitoScoperta.valore;
+  if (!scoperta) {
+    return rispostaRicercaIncompleta(
+      titolo,
+      artista,
+      inizio,
+      'MusicBrainz non ha identificato con sufficiente certezza la composizione; servono le fonti alternative.'
+    );
+  }
+
+  const esitoElenco = await usaMusicBrainz({
+    db,
+    env,
+    configurazione,
+    fetchFn,
+    operazione: fetchControllato => elencaRegistrazioniOpera(scoperta.idMusicBrainz, fetchControllato, 100, 0, {
+      titolo: scoperta.titoloCanonico,
+      lingua: scoperta.linguaOriginale,
+      crediti: scoperta.creditiOriginale || []
+    }),
+    contaRisultati: elenco => Number(elenco?.registrazioni?.length || 0)
   });
+
+  if (esitoElenco.stato !== 'ok') {
+    const memoria = await memoriaDegradata(db, giaNota, ordine, inizio, esitoElenco.errore || esitoElenco.stato);
+    if (memoria) return memoria;
+    return rispostaRicercaIncompleta(
+      titolo,
+      artista,
+      inizio,
+      esitoElenco.errore || 'MusicBrainz non ha completato l elenco delle registrazioni.'
+    );
+  }
+
+  const elencoBase = esitoElenco.valore;
+  completaAnnoOriginale(scoperta, elencoBase.registrazioni, artista);
 
   const riferimento = {
     titolo: scoperta.titoloCanonico,
@@ -97,13 +206,22 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
   let opereAnalizzate = [];
 
   if (approfondisci && scoperta.opereDerivate?.length) {
-    const extra = await approfondisciOpereDerivate(
-      scoperta.opereDerivate,
+    const esitoExtra = await usaMusicBrainz({
+      db,
+      env,
+      configurazione,
       fetchFn,
-      Number(env.MASSIMO_OPERE_DERIVATE_PER_GIRO || 2)
-    );
-    candidati.push(...extra.registrazioni);
-    opereAnalizzate = extra.opereAnalizzate;
+      operazione: fetchControllato => approfondisciOpereDerivate(
+        scoperta.opereDerivate,
+        fetchControllato,
+        Number(env.MASSIMO_OPERE_DERIVATE_PER_GIRO || 2)
+      ),
+      contaRisultati: extra => Number(extra?.registrazioni?.length || 0)
+    });
+    if (esitoExtra.stato === 'ok') {
+      candidati.push(...(esitoExtra.valore?.registrazioni || []));
+      opereAnalizzate = esitoExtra.valore?.opereAnalizzate || [];
+    }
   }
 
   let versioni = classificaElenco(candidati, riferimento);
@@ -137,9 +255,11 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
       titolo: scoperta.titoloCanonico,
       artista: scoperta.artistaOriginale,
       compositore: scoperta.compositore,
+      crediti: scoperta.creditiOriginale || [],
       anno: scoperta.annoOriginale,
       lingua: scoperta.linguaOriginale,
-      idMusicBrainz: scoperta.idMusicBrainz
+      idMusicBrainz: scoperta.idMusicBrainz,
+      metodoIndividuazione: scoperta.metodoIndividuazione || null
     },
     versioniIndividuate: versioni.length,
     versioni,
@@ -163,6 +283,7 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
   if (!nota?.id_musicbrainz) throw new Error('La composizione deve essere cercata almeno una volta prima di usare Cerca ancora.');
 
   const fetchFn = opzioni.fetchFn || fetch;
+  const configurazione = await configurazioneSicura(db);
   const riferimento = {
     titolo: nota.titolo_canonico,
     artista: nota.artista_originale,
@@ -170,14 +291,39 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
     lingua: nota.lingua_originale
   };
 
-  const elenco = await elencaRegistrazioniOpera(
-    nota.id_musicbrainz,
+  const esitoElenco = await usaMusicBrainz({
+    db,
+    env,
+    configurazione,
     fetchFn,
-    100,
-    Math.max(0, Number(offset) || 0),
-    { titolo: nota.titolo_canonico, lingua: nota.lingua_originale }
-  );
+    operazione: fetchControllato => elencaRegistrazioniOpera(
+      nota.id_musicbrainz,
+      fetchControllato,
+      100,
+      Math.max(0, Number(offset) || 0),
+      { titolo: nota.titolo_canonico, lingua: nota.lingua_originale }
+    ),
+    contaRisultati: elenco => Number(elenco?.registrazioni?.length || 0)
+  });
 
+  if (esitoElenco.stato !== 'ok') {
+    const tutte = await caricaVersioni(db, nota.id, ordine);
+    return {
+      stato: 'pronto',
+      provenienza: 'memoria dei risultati - continuazione in attesa',
+      composizione: composizioneDaRiga(nota),
+      versioniIndividuate: tutte.length,
+      versioni: tutte,
+      nuoveVersioniNelGiro: 0,
+      durataMs: Date.now() - inizio,
+      analisiCompleta: false,
+      prossimoOffset: Math.max(0, Number(offset) || 0),
+      aggiornamentoInAttesa: true,
+      motivoAggiornamentoInAttesa: esitoElenco.errore || esitoElenco.stato
+    };
+  }
+
+  const elenco = esitoElenco.valore;
   let nuove = classificaElenco(elenco.registrazioni, riferimento);
   nuove = await verificaCandidatiConIA(
     nuove,
@@ -196,7 +342,7 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
   await registraRicerca(db, {
     titolo, artista, composizioneId: nota.id, candidati: elenco.registrazioni.length,
     risultatiValidi: nuove.length, durataMs,
-    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.2.0', provenienza: 'cerca ancora'
+    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.7.2', provenienza: 'cerca ancora'
   });
 
   return {

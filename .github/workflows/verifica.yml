@@ -1,8 +1,12 @@
-name: Verifica motore
+name: UAB - Verifica motore Cover Lab AI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'lab/**'
+      - 'candidate/**'
+      - 'mother/**'
   pull_request:
     branches: [ main ]
 
@@ -12,14 +16,23 @@ jobs:
     steps:
       - name: Scarica il codice
         uses: actions/checkout@v4
+
       - name: Configura Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Installa dipendenze
         run: npm install
-      - name: Esegui controlli automatici
+
+      - name: Esegui controlli automatici del motore
         run: npm test
+
+      - name: Valida migrazione D1 localmente
+        run: npx wrangler d1 migrations apply cover-lab-ai-db --local
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+
       - name: Valida pacchetto Cloudflare Worker
         run: npx wrangler deploy --dry-run
         env:

@@ -1,9 +1,27 @@
 import { creaChiaveRicerca, creaChiaveDuplicato } from '../motore/normalizzazione.js';
+import { salvaCreditiComposizione } from './crediti-composizione.js';
+import { salvaCreditiVersione } from './versioni-verificate.js';
 
 export async function trovaComposizione(db, titolo, artista) {
   if (!db) return null;
   const chiave = creaChiaveRicerca(titolo, artista);
   return db.prepare('SELECT * FROM composizioni WHERE chiave_ricerca = ?1 LIMIT 1').bind(chiave).first();
+}
+
+function creditiOriginale(composizione = {}) {
+  const ricchi = Array.isArray(composizione.creditiOriginale)
+    ? composizione.creditiOriginale.filter(Boolean)
+    : [];
+  if (ricchi.length) return ricchi;
+  return String(composizione.compositore || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean)
+    .map(nome => ({
+      ruolo: 'compositore',
+      nome,
+      fonte: composizione.idMusicBrainz ? 'musicbrainz' : null
+    }));
 }
 
 export async function salvaComposizione(db, composizione, titoloRichiesto, artistaRichiesto) {
@@ -29,7 +47,53 @@ export async function salvaComposizione(db, composizione, titoloRichiesto, artis
     composizione.compositore, composizione.annoOriginale, composizione.linguaOriginale,
     composizione.paeseOrigine || null, composizione.idMusicBrainz
   ).run();
-  return id;
+
+  const riga = await db.prepare(
+    'SELECT id FROM composizioni WHERE chiave_ricerca=?1 LIMIT 1'
+  ).bind(chiave).first();
+  const idEffettivo = riga?.id || id;
+  await salvaCreditiComposizione(db, idEffettivo, creditiOriginale(composizione));
+  return idEffettivo;
+}
+
+async function idVersioneSalvata(db, composizioneId, versione) {
+  if (versione?.idMusicBrainz) {
+    const riga = await db.prepare(`
+      SELECT id FROM versioni
+      WHERE composizione_id=?1 AND id_musicbrainz=?2
+      LIMIT 1
+    `).bind(composizioneId, versione.idMusicBrainz).first();
+    if (riga?.id) return riga.id;
+  }
+  const chiave = creaChiaveDuplicato(versione);
+  const riga = await db.prepare(`
+    SELECT id FROM versioni
+    WHERE composizione_id=?1 AND chiave_duplicato=?2
+    LIMIT 1
+  `).bind(composizioneId, chiave).first();
+  return riga?.id || null;
+}
+
+function creditiVersione(versione = {}) {
+  const risultato = [];
+  for (const credito of [...(versione.crediti || []), ...(versione.creditiOpera || [])]) {
+    if (credito?.ruolo && credito?.nome) risultato.push(credito);
+  }
+  if (versione.interprete) {
+    risultato.unshift({
+      ruolo: 'interprete',
+      nome: versione.interprete,
+      fonte: versione.idMusicBrainz ? 'musicbrainz' : null,
+      idEsterno: versione.idMusicBrainz || null
+    });
+  }
+  const viste = new Set();
+  return risultato.filter(c => {
+    const chiave = `${String(c.ruolo).toLowerCase()}::${String(c.nome).toLowerCase()}`;
+    if (viste.has(chiave)) return false;
+    viste.add(chiave);
+    return true;
+  });
 }
 
 export async function salvaVersioni(db, composizioneId, versioni) {
@@ -64,6 +128,14 @@ export async function salvaVersioni(db, composizioneId, versioni) {
     v.derivazione ? 1 : 0, v.derivazioneTradotta ? 1 : 0
   ));
   await db.batch(istruzioni);
+
+  // I crediti non restano piu soltanto nel risultato del provider: vengono
+  // agganciati alla versione archiviata e sono disponibili nelle ricerche future.
+  for (const versione of versioni) {
+    const versioneId = await idVersioneSalvata(db, composizioneId, versione);
+    if (!versioneId) continue;
+    await salvaCreditiVersione(db, versioneId, creditiVersione(versione));
+  }
 }
 
 export async function caricaVersioni(db, composizioneId, ordine = 'asc') {

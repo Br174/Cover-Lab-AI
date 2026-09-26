@@ -1,0 +1,107 @@
+name: LAB - Collaudo remoto Cover Lab AI
+
+on:
+  push:
+    branches:
+      - 'lab/uab-onboarding-01'
+    paths:
+      - 'src/**'
+      - 'migrations/**'
+      - 'wrangler.jsonc'
+      - '.github/workflows/lab-multifonte-remoto.yml'
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica anteprima Cloudflare ricerca crediti e natura versione
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev"
+
+          echo "Attendo la LAB Cover Lab AI 0.7.2 completa..."
+          PRONTO=0
+          for TENTATIVO in $(seq 1 90); do
+            CODICE_STATO=$(curl --silent --show-error --max-time 12 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)
+            if [ "$CODICE_STATO" = "200" ] \
+              && grep -q '"versione": "0.7.2"' /tmp/root.json \
+              && grep -q '"creditiDettagliati": "persistenti"' /tmp/root.json \
+              && grep -q '"classificazioneNaturaVersione": "pubblicazione_performance_da_verificare"' /tmp/root.json; then
+              PRONTO=1
+              break
+            fi
+            echo "Tentativo $TENTATIVO: anteprima completa 0.7.2 non ancora pronta (HTTP $CODICE_STATO)"
+            sleep 4
+          done
+          test "$PRONTO" = "1"
+
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/root.json',encoding='utf-8'))
+          assert d.get('versione') == '0.7.2', d
+          assert d.get('stato') == 'operativo', d
+          assert d.get('ricercaLiberaDiagnostica') == 'predisposta', d
+          assert d.get('classificazioneNaturaVersione') == 'pubblicazione_performance_da_verificare', d
+          assert d.get('creditiDettagliati') == 'persistenti', d
+          assert d.get('nessunLimiteTotaleCover') is True, d
+          assert d.get('lottoMusicLab') == 20, d
+          regista=d.get('registaAI') or {}
+          assert regista.get('distinguePubblicazioniEPerformance') is True, regista
+          assert regista.get('creditiComeDatoFondamentale') is True, regista
+          print('OK: motore LAB 0.7.2 completo e raggiungibile.')
+          PY
+
+          echo "--- ARCHIVIO MODUGNO: NATURA + CREDITI + PAGINA 20 ---"
+          CODICE_PAGINA=$(curl --silent --show-error --max-time 30 -o /tmp/pagina.json -w '%{http_code}' \
+            "$BASE/api/versioni?titolo=Nel%20blu%20dipinto%20di%20blu&artista=Domenico%20Modugno&ordine=asc&offset=0" || true)
+          test "$CODICE_PAGINA" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/pagina.json',encoding='utf-8'))
+          versioni=d.get('versioni') or []
+          totale=int(d.get('totale') or 0)
+          composizione=d.get('composizione') or {}
+          crediti_originale=composizione.get('crediti') or []
+          assert totale > 0, d
+          assert 0 < len(versioni) <= 20, len(versioni)
+          assert len(crediti_originale) > 0, composizione
+          for v in versioni:
+              assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
+              assert isinstance(v.get('crediti'), list), v
+              assert len(v.get('crediti')) > 0, v
+          print('OK: archivio espone natura e crediti. Totale:', totale, 'Crediti originale:', len(crediti_originale))
+          PY
+
+          echo "--- RICERCA UTENTE ESATTA: gino paoli sapore di sale ---"
+          CODICE_GINO=$(curl --silent --show-error --max-time 90 -o /tmp/gino.json -w '%{http_code}' \
+            -X POST "$BASE/api/ricerca-libera" \
+            -H 'Content-Type: application/json' \
+            --data '{"query":"gino paoli sapore di sale","ordine":"asc"}' || true)
+          echo "HTTP Gino Paoli: $CODICE_GINO"
+          cat /tmp/gino.json || true
+          echo
+          test "$CODICE_GINO" = "200"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/gino.json',encoding='utf-8'))
+          assert d.get('stato') == 'pronto', d
+          interpretazione=((d.get('ricercaLibera') or {}).get('interpretazione') or {})
+          titolo=(interpretazione.get('titolo') or '').lower()
+          artista=(interpretazione.get('artista') or '').lower()
+          assert 'sapore di sale' in titolo, interpretazione
+          assert 'gino paoli' in artista, interpretazione
+          assert 'autocontrollo' in d, d
+          comp=d.get('composizione') or {}
+          assert isinstance(comp.get('crediti') or [], list), comp
+          versioni=d.get('versioni') or []
+          assert len(versioni) > 0, d
+          for v in versioni:
+              assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
+              assert isinstance(v.get('crediti'), list), v
+              assert len(v.get('crediti')) > 0, v
+          print('OK: Gino Paoli - Sapore di sale restituisce versioni reali.')
+          print('Versioni:', len(versioni), 'Crediti originale:', len(comp.get('crediti') or []))
+          PY
+
+          echo "COLLAUDO REMOTO LAB 0.7.2 COMPLETATO."

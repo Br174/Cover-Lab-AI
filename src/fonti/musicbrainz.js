@@ -1,5 +1,7 @@
 const BASE = 'https://musicbrainz.org/ws/2';
 const ATTESA_MINIMA_MS = 1050;
+const STATI_TRANSITORI = new Set([429, 500, 502, 503, 504]);
+const TENTATIVI_MASSIMI = 3;
 let ultimoAccesso = 0;
 
 function dormi(ms) {
@@ -7,28 +9,63 @@ function dormi(ms) {
 }
 
 async function richiesta(url, fetchFn = fetch) {
-  if (fetchFn === fetch) {
-    const attesa = Math.max(0, ATTESA_MINIMA_MS - (Date.now() - ultimoAccesso));
-    if (attesa) await dormi(attesa);
-    ultimoAccesso = Date.now();
+  let ultimaRisposta = null;
+
+  for (let tentativo = 1; tentativo <= TENTATIVI_MASSIMI; tentativo += 1) {
+    if (fetchFn === fetch) {
+      const attesa = Math.max(0, ATTESA_MINIMA_MS - (Date.now() - ultimoAccesso));
+      if (attesa) await dormi(attesa);
+      ultimoAccesso = Date.now();
+    }
+
+    const risposta = await fetchFn(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
+      }
+    });
+    ultimaRisposta = risposta;
+
+    if (risposta.ok) return risposta.json();
+
+    const transitorio = STATI_TRANSITORI.has(Number(risposta.status));
+    if (!transitorio || tentativo >= TENTATIVI_MASSIMI) break;
+
+    const retryAfter = Number(risposta.headers?.get?.('retry-after') || 0);
+    const attesaServer = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 0;
+    const attesaProgressiva = ATTESA_MINIMA_MS * tentativo;
+    await dormi(Math.max(ATTESA_MINIMA_MS, attesaServer, attesaProgressiva));
   }
 
-  const risposta = await fetchFn(url, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'CoverLabAI/0.2 (https://github.com/Br174)'
-    }
-  });
-  if (!risposta.ok) throw new Error(`MusicBrainz ha risposto ${risposta.status}`);
-  return risposta.json();
+  throw new Error(`MusicBrainz ha risposto ${ultimaRisposta?.status || 'senza stato'}`);
+}
+
+function normalizzaConfronto(valore) {
+  return String(valore || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’‘`]/g, "'")
+    .toLocaleLowerCase('it')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fraseLucene(valore) {
+  return String(valore || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .trim();
 }
 
 function creditoArtista(recording) {
   const crediti = recording?.['artist-credit'] || [];
-  return crediti.map(x => x?.name || x?.artist?.name).filter(Boolean).join('');
+  return crediti.map(x => x?.name || x?.artist?.name).filter(Boolean).join(', ');
 }
 
 function annoDaRelease(recording) {
+  const primaData = String(recording?.['first-release-date'] || '').slice(0, 4);
+  if (/^\d{4}$/.test(primaData)) return Number(primaData);
+
   const anni = (recording?.releases || [])
     .map(r => String(r.date || '').slice(0, 4))
     .filter(x => /^\d{4}$/.test(x))
@@ -76,35 +113,142 @@ function estraiOpereDerivate(opera) {
   return risultato;
 }
 
-export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
-  const q = `recording:\"${titolo.replaceAll('"', '')}\" AND artist:\"${artista.replaceAll('"', '')}\"`;
-  const ricerca = await richiesta(`${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=5`, fetchFn);
-  const migliore = (ricerca.recordings || []).sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0];
-  if (!migliore) return null;
+function ruoloCreditoMusicBrainz(tipo = '') {
+  const t = String(tipo).toLowerCase().trim();
+  if (t === 'composer' || t === 'lyricist and composer') return 'compositore';
+  if (t === 'lyricist') return 'paroliere';
+  if (t === 'writer') return 'autore';
+  if (t === 'translator') return 'traduttore';
+  if (t === 'arranger') return 'arrangiatore';
+  if (t === 'librettist') return 'paroliere';
+  return null;
+}
 
-  const dettaglio = await richiesta(`${BASE}/recording/${migliore.id}?inc=work-rels+artist-credits+releases&fmt=json`, fetchFn);
-  const relazione = relazioneOpera(dettaglio);
-  if (!relazione?.work?.id) return null;
+function creditiOpera(opera) {
+  const visti = new Set();
+  const crediti = [];
+  for (const relazione of opera?.relations || []) {
+    if (!relazione?.artist?.name) continue;
+    const ruolo = ruoloCreditoMusicBrainz(relazione.type);
+    if (!ruolo) continue;
+    const nome = String(relazione.artist.name).trim();
+    const chiave = `${ruolo}::${nome.toLowerCase()}`;
+    if (!nome || visti.has(chiave)) continue;
+    visti.add(chiave);
+    crediti.push({
+      ruolo,
+      nome,
+      fonte: 'musicbrainz',
+      idEsterno: relazione.artist.id || null,
+      nota: relazione.type || null
+    });
+  }
+  return crediti;
+}
 
-  const opera = await richiesta(`${BASE}/work/${relazione.work.id}?inc=aliases+artist-rels+work-rels&fmt=json`, fetchFn);
+function compositoriOpera(opera) {
+  return creditiOpera(opera)
+    .filter(c => c.ruolo === 'compositore')
+    .map(c => c.nome)
+    .join(', ') || null;
+}
+
+async function dettaglioOpera(idOpera, titoloRichiesto, artistaRichiesto, fetchFn, extra = {}) {
+  const opera = await richiesta(
+    `${BASE}/work/${idOpera}?inc=aliases+artist-rels+work-rels&fmt=json`,
+    fetchFn
+  );
   return {
     idMusicBrainz: opera.id,
-    titoloCanonico: opera.title || titolo,
-    artistaOriginale: artista,
-    annoOriginale: annoDaRelease(dettaglio),
+    titoloCanonico: opera.title || titoloRichiesto,
+    artistaOriginale: artistaRichiesto,
+    annoOriginale: extra.annoOriginale ?? null,
     linguaOriginale: opera.language || null,
-    compositore: (opera.relations || [])
-      .filter(r => ['composer', 'lyricist and composer'].includes(r.type) && r.artist)
-      .map(r => r.artist.name)
-      .join(', ') || null,
+    compositore: compositoriOpera(opera),
+    creditiOriginale: creditiOpera(opera),
     opereDerivate: estraiOpereDerivate(opera),
-    registrazioneRiferimento: dettaglio.id
+    registrazioneRiferimento: extra.registrazioneRiferimento || null,
+    metodoIndividuazione: extra.metodoIndividuazione || 'opera'
   };
+}
+
+function opereEsatte(ricerca, titolo) {
+  const atteso = normalizzaConfronto(titolo);
+  return (ricerca?.works || [])
+    .filter(w => Number(w.score || 0) >= 90 && normalizzaConfronto(w.title) === atteso)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+}
+
+async function cercaOperaDiretta(titolo, artista, fetchFn) {
+  const q = `work:"${fraseLucene(titolo)}" AND artist:"${fraseLucene(artista)}"`;
+  const ricerca = await richiesta(
+    `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=5`,
+    fetchFn
+  );
+  const esatte = opereEsatte(ricerca, titolo);
+  if (!esatte.length) return null;
+  return dettaglioOpera(esatte[0].id, titolo, artista, fetchFn, {
+    metodoIndividuazione: 'opera per titolo e artista'
+  });
+}
+
+async function cercaOperaDaRegistrazioni(titolo, artista, fetchFn) {
+  const q = `recording:"${fraseLucene(titolo)}" AND artist:"${fraseLucene(artista)}"`;
+  const ricerca = await richiesta(
+    `${BASE}/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
+    fetchFn
+  );
+
+  const titoloAtteso = normalizzaConfronto(titolo);
+  const artistaAtteso = normalizzaConfronto(artista);
+  const candidati = (ricerca.recordings || [])
+    .filter(r => normalizzaConfronto(r.title) === titoloAtteso)
+    .filter(r => !artistaAtteso || normalizzaConfronto(creditoArtista(r)) === artistaAtteso)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 5);
+
+  for (const candidato of candidati) {
+    const dettaglio = await richiesta(
+      `${BASE}/recording/${candidato.id}?inc=work-rels+artist-credits+releases&fmt=json`,
+      fetchFn
+    );
+    const relazione = relazioneOpera(dettaglio);
+    if (!relazione?.work?.id) continue;
+    return dettaglioOpera(relazione.work.id, titolo, artista, fetchFn, {
+      annoOriginale: annoDaRelease(dettaglio),
+      registrazioneRiferimento: dettaglio.id,
+      metodoIndividuazione: 'registrazione collegata a opera'
+    });
+  }
+  return null;
+}
+
+async function cercaOperaUnicaPerTitolo(titolo, artista, fetchFn) {
+  const q = `work:"${fraseLucene(titolo)}"`;
+  const ricerca = await richiesta(
+    `${BASE}/work/?query=${encodeURIComponent(q)}&fmt=json&limit=10`,
+    fetchFn
+  );
+  const esatte = opereEsatte(ricerca, titolo);
+  if (esatte.length !== 1) return null;
+  return dettaglioOpera(esatte[0].id, titolo, artista, fetchFn, {
+    metodoIndividuazione: 'opera unica per titolo'
+  });
+}
+
+export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
+  const diretta = await cercaOperaDiretta(titolo, artista, fetchFn);
+  if (diretta) return diretta;
+
+  const daRegistrazione = await cercaOperaDaRegistrazioni(titolo, artista, fetchFn);
+  if (daRegistrazione) return daRegistrazione;
+
+  return cercaOperaUnicaPerTitolo(titolo, artista, fetchFn);
 }
 
 export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite = 100, offset = 0, metadatiOpera = {}) {
   const dati = await richiesta(
-    `${BASE}/recording?work=${encodeURIComponent(idOpera)}&fmt=json&limit=${limite}&offset=${offset}&inc=artist-credits+releases+work-rels`,
+    `${BASE}/recording?work=${encodeURIComponent(idOpera)}&fmt=json&limit=${limite}&offset=${offset}&inc=artist-credits+work-rels`,
     fetchFn
   );
 
@@ -124,7 +268,8 @@ export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite 
         derivazione: Boolean(metadatiOpera.derivazione),
         derivazioneTradotta: Boolean(metadatiOpera.tradotta),
         idOperaMusicBrainz: idOpera,
-        titoloOpera: metadatiOpera.titolo || null
+        titoloOpera: metadatiOpera.titolo || null,
+        creditiOpera: Array.isArray(metadatiOpera.crediti) ? metadatiOpera.crediti : []
       };
     })
   };
@@ -144,11 +289,13 @@ export async function approfondisciOpereDerivate(opere = [], fetchFn = fetch, ma
       `${BASE}/work/${operaBreve.idMusicBrainz}?inc=artist-rels+work-rels&fmt=json`,
       fetchFn
     );
+    const crediti = creditiOpera(opera);
     const elenco = await elencaRegistrazioniOpera(opera.id, fetchFn, 100, 0, {
       titolo: opera.title || operaBreve.titolo,
       lingua: opera.language || null,
       derivazione: true,
-      tradotta: operaBreve.tradotta
+      tradotta: operaBreve.tradotta,
+      crediti
     });
     registrazioni.push(...elenco.registrazioni);
     opereAnalizzate.push({
@@ -156,6 +303,7 @@ export async function approfondisciOpereDerivate(opere = [], fetchFn = fetch, ma
       titolo: opera.title || operaBreve.titolo,
       lingua: opera.language || null,
       tradotta: operaBreve.tradotta,
+      crediti,
       registrazioni: elenco.registrazioni.length,
       totaleRegistrazioni: elenco.totale
     });

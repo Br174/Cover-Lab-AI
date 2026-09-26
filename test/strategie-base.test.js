@@ -6,7 +6,7 @@ import {
   ricercaSospettosamentePovera
 } from '../src/motore/strategie-base.js';
 
-test('le strategie deterministiche coprono YouTube, cataloghi e Internet Archive', () => {
+test('le strategie deterministiche coprono Wikipedia, YouTube, cataloghi e Internet Archive', () => {
   const strategie = generaStrategieDeterministiche({
     titolo: 'Sapore di sale',
     artista: 'Gino Paoli',
@@ -15,6 +15,7 @@ test('le strategie deterministiche coprono YouTube, cataloghi e Internet Archive
     paese: 'IT'
   });
   const providers = new Set(strategie.map(s => s.provider));
+  assert.ok(providers.has('wikipedia'));
   assert.ok(providers.has('youtube'));
   assert.ok(providers.has('cataloghi'));
   assert.ok(providers.has('internet_archive'));
@@ -32,6 +33,14 @@ test('il fallback non ripete una strategia gia nota', () => {
     false
   );
   assert.ok(fallback.length > 0);
+});
+
+test('Wikipedia usa il titolo canonico e non crea raffiche di fallback', () => {
+  const fallback = generaStrategieFallback({
+    titolo: 'Sapore di sale', artista: 'Gino Paoli'
+  }, 'wikipedia', []);
+  assert.equal(fallback.length, 1);
+  assert.equal(fallback[0].query, 'Sapore di sale');
 });
 
 test('zero risultati e pochi candidati vengono considerati sospetti', () => {

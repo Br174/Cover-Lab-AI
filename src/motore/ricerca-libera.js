@@ -20,6 +20,49 @@ function leggiJson(raw) {
   return null;
 }
 
+function normalizzaRichiesta(valore) {
+  return String(valore || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function provaArchivio(query, env) {
+  const db = env?.DB;
+  if (!db) return null;
+  const richiesta = normalizzaRichiesta(query);
+  if (!richiesta) return null;
+  try {
+    const righe = await db.prepare(`
+      SELECT titolo_canonico, artista_originale, anno_originale,
+             lingua_originale, paese_origine
+      FROM composizioni
+      WHERE lower(trim(artista_originale || ' ' || titolo_canonico)) = ?1
+         OR lower(trim(titolo_canonico || ' ' || artista_originale)) = ?1
+      LIMIT 3
+    `).bind(richiesta).all();
+    const risultati = righe.results || [];
+    if (risultati.length !== 1) return null;
+    const r = risultati[0];
+    return {
+      stato: 'risolto',
+      titolo: r.titolo_canonico,
+      artista: r.artista_originale,
+      anno: annoValido(r.anno_originale),
+      lingua: testo(r.lingua_originale, 30) || null,
+      paese: testo(r.paese_origine, 30) || null,
+      confidenzaInterpretazione: 99,
+      motivo: 'Composizione riconosciuta direttamente nell Archivio Vivo.',
+      metodo: 'archivio_vivo'
+    };
+  } catch {
+    return null;
+  }
+}
+
 function fallbackDeterministico(query) {
   const parti = String(query || '')
     .split(',')
@@ -58,6 +101,9 @@ export async function interpretaRicercaLibera(query, env) {
   const richiesta = testo(query, 500);
   if (!richiesta) return { stato: 'vuota' };
 
+  const nota = await provaArchivio(richiesta, env);
+  if (nota) return nota;
+
   if (!env?.AI?.run) return fallbackDeterministico(richiesta);
 
   try {
@@ -71,7 +117,7 @@ export async function interpretaRicercaLibera(query, env) {
               'Sei l interprete della barra diagnostica di Cover Lab AI.',
               'Ricevi testo libero che dovrebbe identificare una composizione musicale.',
               'Estrai titolo del brano, artista originale o artista di riferimento, eventuale anno, lingua e paese.',
-              'L utente puo scrivere per esempio: "Gino Paoli, Sapore di sale", "Sapore di sale, Gino Paoli, 1963" oppure solo un titolo molto noto.',
+              'L utente puo scrivere con o senza virgole: "Gino Paoli, Sapore di sale", "gino paoli sapore di sale", "Sapore di sale, Gino Paoli, 1963" oppure solo un titolo molto noto.',
               'Non devi inventare una composizione quando la richiesta e troppo generica o ambigua.',
               'Se riconosci con buona sicurezza una composizione restituisci stato="risolto".',
               'Se manca un dato essenziale o esistono piu possibilita plausibili restituisci stato="ambiguo".',

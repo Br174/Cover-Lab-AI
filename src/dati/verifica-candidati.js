@@ -7,8 +7,9 @@ export async function candidatiDaVerificare(db, chiaveComposizione, limite = 2) 
            stato, prima_origine, numero_fonti
     FROM candidati_scoperta
     WHERE chiave_composizione=?1
-      AND stato IN ('da_verificare','verifica_parziale')
+      AND stato IN ('da_verificare','verifica_parziale','fonte_confermata_ai')
     ORDER BY
+      CASE WHEN stato='fonte_confermata_ai' THEN 0 ELSE 1 END,
       CASE WHEN affidabilita_verificata IS NULL THEN 0 ELSE 1 END,
       CASE WHEN affidabilita_verificata IS NOT NULL THEN datetime(ultima_verifica) END ASC,
       numero_fonti DESC,

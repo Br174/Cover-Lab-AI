@@ -20,7 +20,8 @@ jobs:
           set -euo pipefail
           BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
 
-          echo "Attendo la LAB Cover Lab AI 0.8.0..."
+          echo "Attendo che Cloudflare pubblichi la LAB 0.8.0..."
+          sleep 30
           PRONTO=0
           for TENTATIVO in $(seq 1 120); do
             CODICE=$(curl --silent --show-error --max-time 15 -o /tmp/root.json -w '%{http_code}' "$BASE/" || true)

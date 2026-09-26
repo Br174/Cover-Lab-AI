@@ -52,13 +52,13 @@ function creditoArtista(recording) {
 }
 
 function annoDaRelease(recording) {
+  const anni = [];
   const primaData = String(recording?.['first-release-date'] || '').slice(0, 4);
-  if (/^\d{4}$/.test(primaData)) return Number(primaData);
-
-  const anni = (recording?.releases || [])
-    .map(r => String(r.date || '').slice(0, 4))
-    .filter(x => /^\d{4}$/.test(x))
-    .map(Number);
+  if (/^\d{4}$/.test(primaData)) anni.push(Number(primaData));
+  for (const release of recording?.releases || []) {
+    const anno = String(release?.date || '').slice(0, 4);
+    if (/^\d{4}$/.test(anno)) anni.push(Number(anno));
+  }
   return anni.length ? Math.min(...anni) : null;
 }
 
@@ -237,7 +237,7 @@ export async function individuaComposizione(titolo, artista, fetchFn = fetch) {
 
 export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite = 100, offset = 0, metadatiOpera = {}) {
   const dati = await richiesta(
-    `${BASE}/recording?work=${encodeURIComponent(idOpera)}&fmt=json&limit=${limite}&offset=${offset}&inc=artist-credits+work-rels`,
+    `${BASE}/recording?work=${encodeURIComponent(idOpera)}&fmt=json&limit=${limite}&offset=${offset}&inc=artist-credits+work-rels+releases`,
     fetchFn
   );
 

@@ -12,7 +12,7 @@ jobs:
   diagnosi:
     runs-on: ubuntu-latest
     steps:
-      - name: Leggi candidati e prova fonte cover strutturata
+      - name: Leggi candidati e prova Wikidata
         shell: bash
         run: |
           set -euo pipefail
@@ -34,28 +34,46 @@ jobs:
           for t in (d.get('registaAI') or {}).get('tracce') or []:
               print(json.dumps(t,ensure_ascii=False))
           print('\nULTIME STRATEGIE')
-          for s in (d.get('strategie') or [])[:50]:
+          for s in (d.get('strategie') or [])[:35]:
               print(json.dumps(s,ensure_ascii=False))
           print('\nPROVE CANDIDATI/ARCHIVIO')
           for p in d.get('prove') or []:
               print(json.dumps(p,ensure_ascii=False))
           PY
 
-          echo "--- PROVA SECONDHANDSONGS JSON SENZA CHIAVE ---"
-          HTTP=$(curl --silent --show-error --max-time 30 \
-            -H 'Accept: application/json' \
-            -A 'CoverLabAI/0.8.0 (+https://github.com/Br174/Cover-Lab-AI)' \
-            -o /tmp/shs.json -w '%{http_code}' \
-            'https://secondhandsongs.com/search/work?title=Sapore%20di%20sale' || true)
-          echo "HTTP SecondHandSongs: $HTTP"
-          head -c 8000 /tmp/shs.json || true
-          echo
+          echo "--- PROVA WIKIDATA API + SPARQL ---"
           python - <<'PY'
-          import json
-          try:
-              d=json.load(open('/tmp/shs.json',encoding='utf-8'))
-              print('JSON valido SecondHandSongs; tipo=',type(d).__name__)
-              if isinstance(d,dict): print('chiavi=',list(d)[:30])
-          except Exception as e:
-              print('Risposta non JSON:',e)
+          import json, urllib.parse, urllib.request
+          UA='CoverLabAI/0.8.0 (https://github.com/Br174/Cover-Lab-AI)'
+          def get_json(url, params=None, accept='application/json'):
+              if params:
+                  url += ('&' if '?' in url else '?') + urllib.parse.urlencode(params)
+              req=urllib.request.Request(url,headers={'User-Agent':UA,'Accept':accept})
+              with urllib.request.urlopen(req,timeout=40) as r:
+                  return r.status, json.load(r)
+
+          status, search=get_json('https://www.wikidata.org/w/api.php',{
+              'action':'wbsearchentities','search':'Sapore di sale','language':'it','uselang':'it','type':'item','limit':20,'format':'json'
+          })
+          print('HTTP search',status)
+          for x in search.get('search',[]):
+              print('SEARCH',x.get('id'),x.get('label'),x.get('description'))
+          exact=[x for x in search.get('search',[]) if (x.get('label') or '').casefold()=='sapore di sale']
+          if not exact:
+              raise SystemExit('Nessun item Wikidata esatto per Sapore di sale')
+          qid=exact[0]['id']
+          print('QID scelto',qid)
+          query=f'''SELECT ?version ?versionLabel ?performer ?performerLabel ?date ?rel WHERE {{
+            {{ ?version wdt:P5059 wd:{qid} . BIND("modified version of" AS ?rel) }}
+            UNION
+            {{ ?version wdt:P144 wd:{qid} . BIND("based on" AS ?rel) }}
+            OPTIONAL {{ ?version wdt:P175 ?performer . }}
+            OPTIONAL {{ ?version wdt:P577 ?date . }}
+            SERVICE wikibase:label {{ bd:serviceParam wikibase:language "it,en". }}
+          }} LIMIT 100'''
+          status, data=get_json('https://query.wikidata.org/sparql',{'query':query,'format':'json'},'application/sparql-results+json')
+          rows=data.get('results',{}).get('bindings',[])
+          print('HTTP SPARQL',status,'righe',len(rows))
+          for r in rows:
+              print('ROW', {k:v.get('value') for k,v in r.items()})
           PY

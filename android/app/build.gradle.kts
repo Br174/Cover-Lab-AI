@@ -10,8 +10,8 @@ android {
         applicationId = "it.coverlab.ai"
         minSdk = 23
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.7.1"
 
         // La release stabile non viene collegata automaticamente alla LAB.
         buildConfigField("String", "COVER_LAB_API_BASE", "\"https://DA_CONFIGURARE.workers.dev\"")

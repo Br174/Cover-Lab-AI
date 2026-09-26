@@ -10,30 +10,24 @@ android {
         applicationId = "it.coverlab.ai"
         minSdk = 23
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.7.1"
+        versionCode = 9
+        versionName = "0.7.2"
 
-        // La release stabile non viene collegata automaticamente alla LAB.
         buildConfigField("String", "COVER_LAB_API_BASE", "\"https://DA_CONFIGURARE.workers.dev\"")
     }
 
-    buildFeatures {
-        buildConfig = true
-    }
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".lab"
             versionNameSuffix = "-lab"
-            // Solo l'APK LAB usa l'anteprima Cloudflare della branch di collaudo.
             buildConfigField(
                 "String",
                 "COVER_LAB_API_BASE",
                 "\"https://lab-uab-onboarding-01-cover-lab-ai.brunoverlezza.workers.dev\""
             )
         }
-        release {
-            isMinifyEnabled = false
-        }
+        release { isMinifyEnabled = false }
     }
 }

@@ -9,6 +9,7 @@ const MASSIMO_CANDIDATI_TORNATA = 16;
 const MASSIMO_RISULTATI_SORGENTE_TORNATA = 30;
 const MASSIMO_DOMANDE_DIAGNOSTICA = 16;
 const TIMEOUT_PIANO_MS = 30000;
+const TIMEOUT_RECUPERO_CANDIDATI_MS = 22000;
 const TIMEOUT_FILTRO_MS = 25000;
 
 function estraiJsonBilanciato(s) {
@@ -217,6 +218,151 @@ function unisciInterpretazioni(ai = [], deterministiche = []) {
   return [...mappa.values()].slice(0, MASSIMO_RISULTATI_SORGENTE_TORNATA);
 }
 
+function candidatoIpotesi(c, affidabilitaMassima = 70) {
+  const titoloCandidato = testo(c?.titolo, 250);
+  const interprete = testo(c?.interprete, 200);
+  if (!titoloCandidato || !interprete) return null;
+  const annoCandidato = Number(c?.anno);
+  return {
+    titolo: titoloCandidato,
+    interprete,
+    anno: Number.isInteger(annoCandidato) && annoCandidato > 1800 && annoCandidato < 2200 ? annoCandidato : null,
+    lingua: testo(c?.lingua, 20) || null,
+    paese: testo(c?.paese, 30) || null,
+    tipo: testo(c?.tipo, 40) || 'dubbio',
+    affidabilita: numero(c?.affidabilita ?? 25, 0, affidabilitaMassima)
+  };
+}
+
+function chiaveIpotesi(c) {
+  return `${normalizza(c?.titolo)}::${normalizza(c?.interprete)}`;
+}
+
+function unisciStrategie(principali = [], aggiuntive = []) {
+  const viste = new Set();
+  const risultato = [];
+  for (const s of [...principali, ...aggiuntive]) {
+    const provider = testo(s?.provider, 30).toLowerCase();
+    const query = testo(s?.query, 300);
+    if (!PROVIDER_AMMESSI.has(provider) || !query) continue;
+    const chiave = `${provider}::${normalizza(query)}`;
+    if (viste.has(chiave)) continue;
+    viste.add(chiave);
+    risultato.push({
+      provider,
+      query,
+      lingua: testo(s?.lingua, 20) || null,
+      paese: testo(s?.paese, 20) || null,
+      priorita: numero(s?.priorita ?? 50, 1, 100)
+    });
+  }
+  return risultato.slice(0, MASSIMO_STRATEGIE_TORNATA);
+}
+
+async function recuperaCandidatiSpecificiConIA({
+  titolo,
+  artista,
+  compositore,
+  anno,
+  lingua,
+  paese,
+  domandeAgenda,
+  candidatiGiaNoti
+}, env) {
+  if (!env?.AI?.run) return { candidati: [], strategie: [], avviso: 'IA_NON_DISPONIBILE' };
+
+  const giaNoti = new Set((candidatiGiaNoti || []).map(chiaveIpotesi));
+  const originale = `${normalizza(titolo)}::${normalizza(artista)}`;
+  const messaggi = [
+    {
+      role: 'system',
+      content: [
+        'Sei il secondo passaggio del REGISTA di Cover Lab AI.',
+        'Il primo passaggio non ha prodotto candidati specifici: devi formulare IPOTESI MUSICALI da sottoporre a verifica esterna.',
+        'Elenca soltanto versioni per cui sai indicare sia il titolo usato dalla versione sia l interprete.',
+        'Includi quando opportuno cover, adattamenti con titolo tradotto o diverso, versioni strumentali e pubblicazioni internazionali.',
+        'NON certificare nulla e NON presentare i candidati come fatti: sono piste da verificare.',
+        'Non includere la registrazione originale con lo stesso titolo e lo stesso artista.',
+        'Se non ricordi versioni specifiche, restituisci candidati vuoti invece di inventare.',
+        'Per ogni candidato puoi proporre una query mirata su cataloghi oppure internet_archive per cercare una conferma reale.',
+        `Restituisci al massimo ${MASSIMO_CANDIDATI_TORNATA} candidati e ${MASSIMO_STRATEGIE_TORNATA} strategie.`,
+        'Rispondi esclusivamente con JSON valido {candidati:[...],strategie:[...]}.',
+        'Candidato: {titolo,interprete,anno,lingua,paese,tipo,affidabilita}.',
+        'Strategia: {provider,query,lingua,paese,priorita}. La confidenza del candidato non deve essere interpretata come prova.'
+      ].join(' ')
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        composizione: { titolo, artista, compositore, anno, lingua, paese },
+        agendaAutointerrogazione: domandeAgenda,
+        candidatiGiaNoti: (candidatiGiaNoti || []).slice(0, MASSIMO_CANDIDATI_CONTESTO).map(c => ({
+          titolo: c.titolo,
+          interprete: c.interprete,
+          anno: c.anno,
+          lingua: c.lingua,
+          paese: c.paese
+        }))
+      })
+    }
+  ];
+
+  try {
+    const raw = await conTimeout(
+      env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
+        messages: messaggi,
+        response_format: { type: 'json_object' },
+        temperature: 0.15,
+        max_completion_tokens: 1300
+      }),
+      TIMEOUT_RECUPERO_CANDIDATI_MS,
+      'RECUPERO_CANDIDATI'
+    );
+    const dati = leggiJson(raw) || {};
+    const candidati = [];
+    const viste = new Set(giaNoti);
+    for (const grezzo of (Array.isArray(dati.candidati) ? dati.candidati : []).slice(0, MASSIMO_CANDIDATI_TORNATA)) {
+      const c = candidatoIpotesi(grezzo, 70);
+      if (!c) continue;
+      const chiave = chiaveIpotesi(c);
+      if (!chiave || chiave === originale || viste.has(chiave)) continue;
+      viste.add(chiave);
+      candidati.push(c);
+    }
+
+    const strategieEsplicite = (Array.isArray(dati.strategie) ? dati.strategie : []);
+    const strategieMirate = [];
+    for (const c of candidati.slice(0, 4)) {
+      strategieMirate.push({
+        provider: 'cataloghi',
+        query: `${c.titolo} ${c.interprete}`,
+        lingua: c.lingua || lingua || null,
+        paese: c.paese || paese || null,
+        priorita: 99
+      });
+      strategieMirate.push({
+        provider: 'internet_archive',
+        query: `${c.titolo} ${c.interprete}`,
+        lingua: c.lingua || lingua || null,
+        paese: c.paese || paese || null,
+        priorita: 82
+      });
+    }
+
+    return {
+      candidati,
+      strategie: unisciStrategie(strategieEsplicite, strategieMirate),
+      avviso: candidati.length ? null : 'NESSUN_CANDIDATO_SPECIFICO_RECUPERATO'
+    };
+  } catch (e) {
+    return {
+      candidati: [],
+      strategie: [],
+      avviso: String(e?.message || 'RECUPERO_CANDIDATI_FALLITO').slice(0, 300)
+    };
+  }
+}
+
 export async function generaPianoScopertaConIA({
   titolo,
   artista,
@@ -285,6 +431,8 @@ export async function generaPianoScopertaConIA({
   ];
 
   let raw;
+  let dati = null;
+  let avvisoPiano = null;
   try {
     raw = await conTimeout(
       env.AI.run(env.MODELLO_CLASSIFICAZIONE || '@cf/zai-org/glm-4.7-flash', {
@@ -296,24 +444,13 @@ export async function generaPianoScopertaConIA({
       TIMEOUT_PIANO_MS,
       'PIANO_SCOPERTA'
     );
+    dati = leggiJson(raw);
+    if (!dati) avvisoPiano = 'RISPOSTA_AI_NON_INTERPRETABILE';
   } catch (e) {
-    return {
-      disponibile: true,
-      strategie: fallbackAgenda(), candidati: [], domandeEsplorate: domandeAgenda.map(d => d.id), nuoveDomande: [],
-      esaurita: false, recupero: 'fallback_agenda', avviso: e?.message || 'Errore AI non specificato'
-    };
+    avvisoPiano = e?.message || 'Errore AI non specificato';
   }
 
-  const dati = leggiJson(raw);
-  if (!dati) {
-    return {
-      disponibile: true,
-      strategie: fallbackAgenda(), candidati: [], domandeEsplorate: domandeAgenda.map(d => d.id), nuoveDomande: [],
-      esaurita: false, recupero: 'fallback_agenda', avviso: 'RISPOSTA_AI_NON_INTERPRETABILE'
-    };
-  }
-
-  const strategie = (Array.isArray(dati.strategie) ? dati.strategie : [])
+  const strategieAI = (Array.isArray(dati?.strategie) ? dati.strategie : [])
     .slice(0, MASSIMO_STRATEGIE_TORNATA)
     .map(s => {
       const provider = testo(s?.provider, 30).toLowerCase();
@@ -328,38 +465,48 @@ export async function generaPianoScopertaConIA({
     })
     .filter(Boolean);
 
-  const candidati = (Array.isArray(dati.candidati) ? dati.candidati : [])
+  let candidati = (Array.isArray(dati?.candidati) ? dati.candidati : [])
     .slice(0, MASSIMO_CANDIDATI_TORNATA)
-    .map(c => {
-      const titoloCandidato = testo(c?.titolo, 250);
-      if (!titoloCandidato) return null;
-      const annoCandidato = Number(c?.anno);
-      return {
-        titolo: titoloCandidato,
-        interprete: testo(c?.interprete, 200) || null,
-        anno: Number.isInteger(annoCandidato) && annoCandidato > 1800 && annoCandidato < 2200 ? annoCandidato : null,
-        lingua: testo(c?.lingua, 20) || null,
-        paese: testo(c?.paese, 30) || null,
-        tipo: testo(c?.tipo, 40) || 'dubbio',
-        affidabilita: numero(c?.affidabilita ?? 25, 0, 80)
-      };
-    })
+    .map(c => candidatoIpotesi(c, 80))
     .filter(Boolean);
 
-  const domandeEsplorate = (Array.isArray(dati.domandeEsplorate) ? dati.domandeEsplorate : [])
+  const domandeEsplorate = (Array.isArray(dati?.domandeEsplorate) ? dati.domandeEsplorate : [])
     .slice(0, MASSIMO_DOMANDE_DIAGNOSTICA)
     .map(x => testo(x, 120)).filter(Boolean);
-  const nuoveDomande = (Array.isArray(dati.nuoveDomande) ? dati.nuoveDomande : [])
+  const nuoveDomande = (Array.isArray(dati?.nuoveDomande) ? dati.nuoveDomande : [])
     .slice(0, 12).map(x => testo(x, 400)).filter(Boolean);
+
+  let strategie = strategieAI.length ? strategieAI : fallbackAgenda();
+  let recuperoCandidati = null;
+  if (!candidati.length) {
+    recuperoCandidati = await recuperaCandidatiSpecificiConIA({
+      titolo,
+      artista,
+      compositore,
+      anno,
+      lingua,
+      paese,
+      domandeAgenda,
+      candidatiGiaNoti
+    }, env);
+    candidati = recuperoCandidati.candidati || [];
+    strategie = unisciStrategie(strategie, recuperoCandidati.strategie || []);
+  }
+
+  const recupero = candidati.length && recuperoCandidati
+    ? 'recupero_candidati_specifici'
+    : (!strategieAI.length ? 'fallback_agenda' : null);
+  const avvisi = [avvisoPiano, recuperoCandidati?.avviso].filter(Boolean);
 
   return {
     disponibile: true,
-    strategie: strategie.length ? strategie : fallbackAgenda(),
+    strategie,
     candidati,
     domandeEsplorate: domandeEsplorate.length ? domandeEsplorate : domandeAgenda.map(d => d.id),
     nuoveDomande,
-    esaurita: dati.esaurita === true,
-    ...(strategie.length ? {} : { recupero: 'fallback_agenda_vuota' })
+    esaurita: dati?.esaurita === true,
+    ...(recupero ? { recupero } : {}),
+    ...(avvisi.length ? { avviso: avvisi.join(' | ') } : {})
   };
 }
 

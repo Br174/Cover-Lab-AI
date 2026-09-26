@@ -27,6 +27,8 @@ export async function salvaVersioneVerificata(db, composizioneId, versione) {
   }
 
   const id = esistente?.id || crypto.randomUUID();
+  const statoArchivio = versione.statoArchivio || 'in_verifica';
+  const motivoArchivio = versione.motivoArchivio || null;
   if (esistente) {
     await db.prepare(`
       UPDATE versioni
@@ -44,6 +46,9 @@ export async function salvaVersioneVerificata(db, composizioneId, versione) {
           titolo_opera=COALESCE(?13, titolo_opera),
           derivazione=MAX(derivazione, ?14),
           derivazione_tradotta=MAX(derivazione_tradotta, ?15),
+          stato_archivio=CASE WHEN ?16='archiviata' THEN 'archiviata' ELSE stato_archivio END,
+          motivo_archivio=CASE WHEN ?16='archiviata' THEN ?17 ELSE motivo_archivio END,
+          data_ammissione_archivio=CASE WHEN ?16='archiviata' THEN COALESCE(data_ammissione_archivio,CURRENT_TIMESTAMP) ELSE data_ammissione_archivio END,
           data_ultima_verifica=CURRENT_TIMESTAMP
       WHERE id=?1
     `).bind(
@@ -53,7 +58,8 @@ export async function salvaVersioneVerificata(db, composizioneId, versione) {
       versione.idMusicBrainz || null, chiave,
       versione.statoVerifica || 'verificato_multifonte',
       versione.idOperaMusicBrainz || null, versione.titoloOpera || null,
-      versione.derivazione ? 1 : 0, versione.derivazioneTradotta ? 1 : 0
+      versione.derivazione ? 1 : 0, versione.derivazioneTradotta ? 1 : 0,
+      statoArchivio, motivoArchivio
     ).run();
   } else {
     await db.prepare(`
@@ -61,8 +67,11 @@ export async function salvaVersioneVerificata(db, composizioneId, versione) {
         id, composizione_id, titolo, interprete, anno, lingua, paese, tipo,
         affidabilita, id_musicbrainz, chiave_duplicato, stato_verifica,
         id_opera_musicbrainz, titolo_opera, derivazione, derivazione_tradotta,
+        stato_archivio, motivo_archivio, data_ammissione_archivio,
         data_ultima_verifica
-      ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,CURRENT_TIMESTAMP)
+      ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,
+        CASE WHEN ?17='archiviata' THEN CURRENT_TIMESTAMP ELSE NULL END,
+        CURRENT_TIMESTAMP)
     `).bind(
       id, composizioneId, versione.titolo, versione.interprete,
       versione.anno || null, versione.lingua || null, versione.paese || null,
@@ -70,7 +79,8 @@ export async function salvaVersioneVerificata(db, composizioneId, versione) {
       versione.idMusicBrainz || null, chiave,
       versione.statoVerifica || 'verificato_multifonte',
       versione.idOperaMusicBrainz || null, versione.titoloOpera || null,
-      versione.derivazione ? 1 : 0, versione.derivazioneTradotta ? 1 : 0
+      versione.derivazione ? 1 : 0, versione.derivazioneTradotta ? 1 : 0,
+      statoArchivio, motivoArchivio
     ).run();
   }
   return id;

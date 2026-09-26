@@ -6,6 +6,7 @@ import { verificaCandidatiConIA } from './verifica-intelligente.js';
 import { normalizzaTesto } from './normalizzazione.js';
 import { eseguiOperazioneProvider } from './source-router.js';
 import { leggiConfigurazioneArchivioVivo } from '../dati/archivio-vivo.js';
+import { leggiCreditiComposizione } from '../dati/crediti-composizione.js';
 import { trovaComposizione, salvaComposizione, salvaVersioni, caricaVersioni, registraRicerca, salvaOpereCollegate } from '../dati/archivio.js';
 
 function composizioneDaRiga(riga) {
@@ -57,11 +58,7 @@ function classificaElenco(elenco, riferimento) {
 }
 
 async function configurazioneSicura(db) {
-  try {
-    return await leggiConfigurazioneArchivioVivo(db);
-  } catch {
-    return {};
-  }
+  try { return await leggiConfigurazioneArchivioVivo(db); } catch { return {}; }
 }
 
 function fetchConSegnale(fetchFn, signal) {
@@ -88,6 +85,7 @@ async function memoriaDegradata(db, riga, ordine, inizio, motivo) {
     composizione: composizioneDaRiga(riga),
     versioniIndividuate: versioni.length,
     versioni,
+    conteggioProvenienza: { archivio: versioni.length, ricerca: 0 },
     durataMs: Date.now() - inizio,
     analisiCompleta: false,
     approfondimentoDisponibile: true,
@@ -103,6 +101,7 @@ function rispostaRicercaIncompleta(titolo, artista, inizio, motivo) {
     composizione: { titolo, artista },
     versioniIndividuate: 0,
     versioni: [],
+    conteggioProvenienza: { archivio: 0, ricerca: 0 },
     durataMs: Date.now() - inizio,
     analisiCompleta: false,
     approfondimentoDisponibile: true,
@@ -114,7 +113,7 @@ function rispostaRicercaIncompleta(titolo, artista, inizio, motivo) {
 export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfondisci = false }, env, opzioni = {}) {
   const inizio = Date.now();
   const db = env.DB;
-  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.7.2';
+  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.8.0';
   const fetchFn = opzioni.fetchFn || fetch;
   const configurazione = await configurazioneSicura(db);
 
@@ -132,17 +131,15 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
       composizione: composizioneDaRiga(giaNota),
       versioniIndividuate: versioni.length,
       versioni,
+      conteggioProvenienza: { archivio: versioni.length, ricerca: 0 },
       durataMs,
-      analisiCompleta: true,
-      approfondimentoDisponibile: false
+      analisiCompleta: false,
+      approfondimentoDisponibile: true
     };
   }
 
   const esitoScoperta = await usaMusicBrainz({
-    db,
-    env,
-    configurazione,
-    fetchFn,
+    db, env, configurazione, fetchFn,
     operazione: fetchControllato => individuaComposizione(titolo, artista, fetchControllato),
     contaRisultati: scoperta => scoperta ? 1 : 0
   });
@@ -150,29 +147,17 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
   if (esitoScoperta.stato !== 'ok') {
     const memoria = await memoriaDegradata(db, giaNota, ordine, inizio, esitoScoperta.errore || esitoScoperta.stato);
     if (memoria) return memoria;
-    return rispostaRicercaIncompleta(
-      titolo,
-      artista,
-      inizio,
-      esitoScoperta.errore || 'MusicBrainz temporaneamente non disponibile.'
-    );
+    return rispostaRicercaIncompleta(titolo, artista, inizio, esitoScoperta.errore || 'MusicBrainz temporaneamente non disponibile.');
   }
 
   const scoperta = esitoScoperta.valore;
   if (!scoperta) {
-    return rispostaRicercaIncompleta(
-      titolo,
-      artista,
-      inizio,
-      'MusicBrainz non ha identificato con sufficiente certezza la composizione; servono le fonti alternative.'
-    );
+    return rispostaRicercaIncompleta(titolo, artista, inizio,
+      'MusicBrainz non ha identificato con sufficiente certezza la composizione; servono le fonti alternative.');
   }
 
   const esitoElenco = await usaMusicBrainz({
-    db,
-    env,
-    configurazione,
-    fetchFn,
+    db, env, configurazione, fetchFn,
     operazione: fetchControllato => elencaRegistrazioniOpera(scoperta.idMusicBrainz, fetchControllato, 100, 0, {
       titolo: scoperta.titoloCanonico,
       lingua: scoperta.linguaOriginale,
@@ -184,17 +169,12 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
   if (esitoElenco.stato !== 'ok') {
     const memoria = await memoriaDegradata(db, giaNota, ordine, inizio, esitoElenco.errore || esitoElenco.stato);
     if (memoria) return memoria;
-    return rispostaRicercaIncompleta(
-      titolo,
-      artista,
-      inizio,
-      esitoElenco.errore || 'MusicBrainz non ha completato l elenco delle registrazioni.'
-    );
+    return rispostaRicercaIncompleta(titolo, artista, inizio,
+      esitoElenco.errore || 'MusicBrainz non ha completato l elenco delle registrazioni.');
   }
 
   const elencoBase = esitoElenco.valore;
   completaAnnoOriginale(scoperta, elencoBase.registrazioni, artista);
-
   const riferimento = {
     titolo: scoperta.titoloCanonico,
     artista: scoperta.artistaOriginale,
@@ -204,17 +184,13 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
 
   let candidati = [...elencoBase.registrazioni];
   let opereAnalizzate = [];
-
   if (approfondisci && scoperta.opereDerivate?.length) {
     const esitoExtra = await usaMusicBrainz({
-      db,
-      env,
-      configurazione,
-      fetchFn,
+      db, env, configurazione, fetchFn,
       operazione: fetchControllato => approfondisciOpereDerivate(
         scoperta.opereDerivate,
         fetchControllato,
-        Number(env.MASSIMO_OPERE_DERIVATE_PER_GIRO || 2)
+        Number(env.MASSIMO_OPERE_DERIVATE_PER_GIRO || 6)
       ),
       contaRisultati: extra => Number(extra?.registrazioni?.length || 0)
     });
@@ -226,24 +202,18 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
 
   let versioni = classificaElenco(candidati, riferimento);
   if (approfondisci) {
-    versioni = await verificaCandidatiConIA(
-      versioni,
-      riferimento,
-      env,
-      Number(env.MASSIMO_CANDIDATI_IA_PER_GIRO || 12)
-    );
+    versioni = await verificaCandidatiConIA(versioni, riferimento, env, Number(env.MASSIMO_CANDIDATI_IA_PER_GIRO || 20));
   }
-  versioni = deduplicaVersioni(versioni).filter(v => v.tipo !== 'non correlato');
-  versioni = ordina(versioni, ordine);
+  versioni = ordina(deduplicaVersioni(versioni).filter(v => v.tipo !== 'non correlato'), ordine);
 
   const composizioneId = await salvaComposizione(db, scoperta, titolo, artista) || scoperta.idMusicBrainz;
   await salvaOpereCollegate(db, composizioneId, scoperta.opereDerivate || []);
-  await salvaVersioni(db, composizioneId, versioni);
+  const salvataggio = await salvaVersioni(db, composizioneId, versioni, scoperta.creditiOriginale || []);
 
   const durataMs = Date.now() - inizio;
   await registraRicerca(db, {
     titolo, artista, composizioneId, candidati: candidati.length,
-    risultatiValidi: versioni.length, durataMs, versioneAlgoritmo,
+    risultatiValidi: salvataggio.archiviate, durataMs, versioneAlgoritmo,
     provenienza: approfondisci ? 'ricerca approfondita' : 'nuova ricerca'
   });
 
@@ -263,6 +233,9 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
     },
     versioniIndividuate: versioni.length,
     versioni,
+    nuoveArchiviateNelGiro: salvataggio.archiviate,
+    nuoveInVerificaNelGiro: salvataggio.inVerifica,
+    conteggioProvenienza: { archivio: 0, ricerca: versioni.length },
     durataMs,
     analisiCompleta: elencoBase.totale <= 100 && (!scoperta.opereDerivate?.length || approfondisci),
     totaleRegistrazioniCollegate: elencoBase.totale,
@@ -284,6 +257,7 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
 
   const fetchFn = opzioni.fetchFn || fetch;
   const configurazione = await configurazioneSicura(db);
+  const creditiOriginale = await leggiCreditiComposizione(db, nota.id);
   const riferimento = {
     titolo: nota.titolo_canonico,
     artista: nota.artista_originale,
@@ -292,16 +266,13 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
   };
 
   const esitoElenco = await usaMusicBrainz({
-    db,
-    env,
-    configurazione,
-    fetchFn,
+    db, env, configurazione, fetchFn,
     operazione: fetchControllato => elencaRegistrazioniOpera(
       nota.id_musicbrainz,
       fetchControllato,
       100,
       Math.max(0, Number(offset) || 0),
-      { titolo: nota.titolo_canonico, lingua: nota.lingua_originale }
+      { titolo: nota.titolo_canonico, lingua: nota.lingua_originale, crediti: creditiOriginale }
     ),
     contaRisultati: elenco => Number(elenco?.registrazioni?.length || 0)
   });
@@ -314,6 +285,7 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
       composizione: composizioneDaRiga(nota),
       versioniIndividuate: tutte.length,
       versioni: tutte,
+      conteggioProvenienza: { archivio: tutte.length, ricerca: 0 },
       nuoveVersioniNelGiro: 0,
       durataMs: Date.now() - inizio,
       analisiCompleta: false,
@@ -325,14 +297,9 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
 
   const elenco = esitoElenco.valore;
   let nuove = classificaElenco(elenco.registrazioni, riferimento);
-  nuove = await verificaCandidatiConIA(
-    nuove,
-    riferimento,
-    env,
-    Number(env.MASSIMO_CANDIDATI_IA_PER_GIRO || 12)
-  );
+  nuove = await verificaCandidatiConIA(nuove, riferimento, env, Number(env.MASSIMO_CANDIDATI_IA_PER_GIRO || 20));
   nuove = deduplicaVersioni(nuove).filter(v => v.tipo !== 'non correlato');
-  await salvaVersioni(db, nota.id, nuove);
+  const salvataggio = await salvaVersioni(db, nota.id, nuove, creditiOriginale);
 
   const tutte = await caricaVersioni(db, nota.id, ordine);
   const nuovoOffset = Math.max(0, Number(offset) || 0) + elenco.registrazioni.length;
@@ -341,8 +308,8 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
 
   await registraRicerca(db, {
     titolo, artista, composizioneId: nota.id, candidati: elenco.registrazioni.length,
-    risultatiValidi: nuove.length, durataMs,
-    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.7.2', provenienza: 'cerca ancora'
+    risultatiValidi: salvataggio.archiviate, durataMs,
+    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.8.0', provenienza: 'cerca ancora'
   });
 
   return {
@@ -351,7 +318,9 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
     composizione: composizioneDaRiga(nota),
     versioniIndividuate: tutte.length,
     versioni: tutte,
-    nuoveVersioniNelGiro: nuove.length,
+    conteggioProvenienza: { archivio: tutte.length, ricerca: salvataggio.archiviate },
+    nuoveVersioniNelGiro: salvataggio.archiviate,
+    nuoveInVerificaNelGiro: salvataggio.inVerifica,
     durataMs,
     analisiCompleta: prossimoOffset == null,
     prossimoOffset

@@ -21,8 +21,8 @@ test('una fonte forte come Wikipedia puo bastare se il candidato e coerente', ()
   assert.ok(esito.affidabilita >= 90);
 });
 
-test('YouTube da solo richiede la conferma AI', () => {
-  const candidato = { affidabilita_proposta: 72 };
+test('YouTube ambiguo richiede il controllo AI supplementare', () => {
+  const candidato = { affidabilita_proposta: 72, stato: 'da_verificare' };
   const senzaAI = valutaProveCandidato(candidato, [{ fonte: 'youtube' }], null, 90, null);
   assert.equal(senzaAI.promosso, false);
 
@@ -32,7 +32,7 @@ test('YouTube da solo richiede la conferma AI', () => {
     motivo: 'Il video e coerente con una cover della composizione.'
   });
   assert.equal(conAI.promosso, true);
-  assert.equal(conAI.metodo, 'youtube_verificato_ai');
+  assert.equal(conAI.metodo, 'fonte_reale_verificata_ai');
   assert.ok(conAI.affidabilita >= 90);
 });
 

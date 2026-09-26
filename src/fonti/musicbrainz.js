@@ -21,7 +21,7 @@ async function richiesta(url, fetchFn = fetch) {
     const risposta = await fetchFn(url, {
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'CoverLabAI/0.3 (https://github.com/Br174/Cover-Lab-AI)'
+        'User-Agent': 'CoverLabAI/0.7 (https://github.com/Br174/Cover-Lab-AI)'
       }
     });
     ultimaRisposta = risposta;
@@ -59,7 +59,7 @@ function fraseLucene(valore) {
 
 function creditoArtista(recording) {
   const crediti = recording?.['artist-credit'] || [];
-  return crediti.map(x => x?.name || x?.artist?.name).filter(Boolean).join('');
+  return crediti.map(x => x?.name || x?.artist?.name).filter(Boolean).join(', ');
 }
 
 function annoDaRelease(recording) {
@@ -113,11 +113,43 @@ function estraiOpereDerivate(opera) {
   return risultato;
 }
 
+function ruoloCreditoMusicBrainz(tipo = '') {
+  const t = String(tipo).toLowerCase().trim();
+  if (t === 'composer' || t === 'lyricist and composer') return 'compositore';
+  if (t === 'lyricist') return 'paroliere';
+  if (t === 'writer') return 'autore';
+  if (t === 'translator') return 'traduttore';
+  if (t === 'arranger') return 'arrangiatore';
+  if (t === 'librettist') return 'paroliere';
+  return null;
+}
+
+function creditiOpera(opera) {
+  const visti = new Set();
+  const crediti = [];
+  for (const relazione of opera?.relations || []) {
+    if (!relazione?.artist?.name) continue;
+    const ruolo = ruoloCreditoMusicBrainz(relazione.type);
+    if (!ruolo) continue;
+    const nome = String(relazione.artist.name).trim();
+    const chiave = `${ruolo}::${nome.toLowerCase()}`;
+    if (!nome || visti.has(chiave)) continue;
+    visti.add(chiave);
+    crediti.push({
+      ruolo,
+      nome,
+      fonte: 'musicbrainz',
+      idEsterno: relazione.artist.id || null,
+      nota: relazione.type || null
+    });
+  }
+  return crediti;
+}
+
 function compositoriOpera(opera) {
-  return (opera?.relations || [])
-    .filter(r => ['composer', 'lyricist and composer'].includes(r.type) && r.artist)
-    .map(r => r.artist.name)
-    .filter(Boolean)
+  return creditiOpera(opera)
+    .filter(c => c.ruolo === 'compositore')
+    .map(c => c.nome)
     .join(', ') || null;
 }
 
@@ -133,6 +165,7 @@ async function dettaglioOpera(idOpera, titoloRichiesto, artistaRichiesto, fetchF
     annoOriginale: extra.annoOriginale ?? null,
     linguaOriginale: opera.language || null,
     compositore: compositoriOpera(opera),
+    creditiOriginale: creditiOpera(opera),
     opereDerivate: estraiOpereDerivate(opera),
     registrazioneRiferimento: extra.registrazioneRiferimento || null,
     metodoIndividuazione: extra.metodoIndividuazione || 'opera'
@@ -235,7 +268,8 @@ export async function elencaRegistrazioniOpera(idOpera, fetchFn = fetch, limite 
         derivazione: Boolean(metadatiOpera.derivazione),
         derivazioneTradotta: Boolean(metadatiOpera.tradotta),
         idOperaMusicBrainz: idOpera,
-        titoloOpera: metadatiOpera.titolo || null
+        titoloOpera: metadatiOpera.titolo || null,
+        creditiOpera: Array.isArray(metadatiOpera.crediti) ? metadatiOpera.crediti : []
       };
     })
   };
@@ -255,11 +289,13 @@ export async function approfondisciOpereDerivate(opere = [], fetchFn = fetch, ma
       `${BASE}/work/${operaBreve.idMusicBrainz}?inc=artist-rels+work-rels&fmt=json`,
       fetchFn
     );
+    const crediti = creditiOpera(opera);
     const elenco = await elencaRegistrazioniOpera(opera.id, fetchFn, 100, 0, {
       titolo: opera.title || operaBreve.titolo,
       lingua: opera.language || null,
       derivazione: true,
-      tradotta: operaBreve.tradotta
+      tradotta: operaBreve.tradotta,
+      crediti
     });
     registrazioni.push(...elenco.registrazioni);
     opereAnalizzate.push({
@@ -267,6 +303,7 @@ export async function approfondisciOpereDerivate(opere = [], fetchFn = fetch, ma
       titolo: opera.title || operaBreve.titolo,
       lingua: opera.language || null,
       tradotta: operaBreve.tradotta,
+      crediti,
       registrazioni: elenco.registrazioni.length,
       totaleRegistrazioni: elenco.totale
     });

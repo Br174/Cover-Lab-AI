@@ -12,14 +12,14 @@ jobs:
   diagnosi:
     runs-on: ubuntu-latest
     steps:
-      - name: Prova MediaWiki su Sapore di sale
+      - name: Diagnosi sola lettura Sapore di sale e Ancora
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://lab-archive-diagnostics-080-cover-lab-ai.brunoverlezza.workers.dev"
           sleep 20
 
-          echo "--- DIAGNOSTICA LAB ---"
+          echo "--- DIAGNOSTICA SAPORE DI SALE ---"
           curl --silent --show-error --max-time 40 \
             "$BASE/api/diagnostica?titolo=Sapore%20di%20sale&artista=Gino%20Paoli" -o /tmp/diag.json
           python - <<'PY'
@@ -29,6 +29,27 @@ jobs:
           print('STATI CANDIDATI',d.get('statiCandidati'))
           print('FONTI',d.get('fonti'))
           print('ULTIMO REGISTA',((d.get('registaAI') or {}).get('tracce') or [None])[0])
+          PY
+
+          echo "--- ARCHIVIO ANCORA: SOLA LETTURA ---"
+          curl --silent --show-error --max-time 40 \
+            "$BASE/api/versioni?titolo=Ancora&artista=Eduardo%20De%20Crescenzo&ordine=asc" -o /tmp/ancora-versioni.json
+          curl --silent --show-error --max-time 40 \
+            "$BASE/api/diagnostica?titolo=Ancora&artista=Eduardo%20De%20Crescenzo" -o /tmp/ancora-diag.json
+          python - <<'PY'
+          import json
+          v=json.load(open('/tmp/ancora-versioni.json',encoding='utf-8'))
+          d=json.load(open('/tmp/ancora-diag.json',encoding='utf-8'))
+          print('VERSIONI ANCORA')
+          for x in v.get('versioni') or []:
+            print({k:x.get(k) for k in ('id','titolo','interprete','anno','tipo','affidabilita','idMusicBrainz','statoVerifica','statoArchivio','motivoArchivio')})
+          print('PROVE SOSPETTE')
+          for p in d.get('prove') or []:
+            t=' '.join(str(p.get(k) or '') for k in ('interprete','titolo','titoloFonte','fonte','indirizzo'))
+            if 'Migliacci' in t or 'Mattone' in t:
+              print(p)
+          print('FONTI ANCORA',d.get('fonti'))
+          print('STATI ANCORA',d.get('statiCandidati'))
           PY
 
           echo "--- MEDIAWIKI ACTION API ---"

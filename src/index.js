@@ -7,6 +7,7 @@ import { descriviRegistaAI } from './motore/regista-ai.js';
 import { interpretaRicercaLibera } from './motore/ricerca-libera.js';
 import { applicaAutocontrollo } from './motore/self-check.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
+import { aggiungiFontiECrediti } from './dati/dettagli-versioni.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 
 const INTESTAZIONI = {
@@ -41,6 +42,29 @@ function programma(ctx, promessa) {
   if (!promessa) return;
   const protetta = Promise.resolve(promessa).catch(e => console.error(e));
   if (ctx?.waitUntil) ctx.waitUntil(protetta);
+}
+
+function creditiComposizione(composizione = {}) {
+  if (Array.isArray(composizione.crediti) && composizione.crediti.length) return composizione.crediti;
+  return String(composizione.compositore || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean)
+    .map(nome => ({ ruolo: 'compositore', nome, fonte: composizione.idMusicBrainz ? 'musicbrainz' : null }));
+}
+
+async function arricchisciRisultato(risultato, env) {
+  if (!risultato || typeof risultato !== 'object') return risultato;
+  const versioniBase = Array.isArray(risultato.versioni) ? risultato.versioni : [];
+  const versioni = await aggiungiFontiECrediti(env?.DB, versioniBase);
+  const composizione = risultato.composizione
+    ? { ...risultato.composizione, crediti: creditiComposizione(risultato.composizione) }
+    : risultato.composizione;
+  return { ...risultato, composizione, versioni };
+}
+
+async function preparaRisultato(risultato, env) {
+  return applicaAutocontrollo(await arricchisciRisultato(risultato, env));
 }
 
 function originaleDaRisultato(risultato, titolo, artista) {
@@ -85,6 +109,8 @@ function statoMotore(env, fonti = null) {
     registaAI: descriviRegistaAI(),
     autocontrolloRisultati: 'predisposto',
     ricercaLiberaDiagnostica: 'predisposta',
+    classificazioneNaturaVersione: 'pubblicazione_performance_da_verificare',
+    creditiDettagliati: 'predisposti',
     nessunLimiteTotaleCover: true,
     sourceRouter: 'predisposto',
     circuitBreaker: 'predisposto',
@@ -179,7 +205,7 @@ export default {
           ordine,
           approfondisci: false
         };
-        const risultato = applicaAutocontrollo(await cercaVersioni(parametri, env));
+        const risultato = await preparaRisultato(await cercaVersioni(parametri, env), env);
         programmaApprofondimenti(ctx, risultato, parametri, env, 'ricerca diagnostica manuale Cover Lab');
 
         return json({
@@ -204,7 +230,7 @@ export default {
       const offset = Math.max(0, Number(corpo?.offset || 100));
       if (!titolo || !artista) return errore('Titolo e artista sono obbligatori.');
       try {
-        const risultato = applicaAutocontrollo(await cercaAncoraVersioni({ titolo, artista, ordine, offset }, env));
+        const risultato = await preparaRisultato(await cercaAncoraVersioni({ titolo, artista, ordine, offset }, env), env);
         programma(ctx, accodaArchivioVivo(env.DB, {
           titolo,
           artista,
@@ -238,7 +264,7 @@ export default {
       if (!parametri.artista) return errore("L'artista è obbligatorio nella prima versione del motore.");
 
       try {
-        const risultato = applicaAutocontrollo(await cercaVersioni(parametri, env));
+        const risultato = await preparaRisultato(await cercaVersioni(parametri, env), env);
         programmaApprofondimenti(ctx, risultato, parametri, env);
         return json(risultato);
       } catch (e) {

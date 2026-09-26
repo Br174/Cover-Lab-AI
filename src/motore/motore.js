@@ -114,7 +114,7 @@ function rispostaRicercaIncompleta(titolo, artista, inizio, motivo) {
 export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfondisci = false }, env, opzioni = {}) {
   const inizio = Date.now();
   const db = env.DB;
-  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.6.1';
+  const versioneAlgoritmo = env.VERSIONE_MOTORE || '0.7.2';
   const fetchFn = opzioni.fetchFn || fetch;
   const configurazione = await configurazioneSicura(db);
 
@@ -175,7 +175,8 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
     fetchFn,
     operazione: fetchControllato => elencaRegistrazioniOpera(scoperta.idMusicBrainz, fetchControllato, 100, 0, {
       titolo: scoperta.titoloCanonico,
-      lingua: scoperta.linguaOriginale
+      lingua: scoperta.linguaOriginale,
+      crediti: scoperta.creditiOriginale || []
     }),
     contaRisultati: elenco => Number(elenco?.registrazioni?.length || 0)
   });
@@ -254,6 +255,7 @@ export async function cercaVersioni({ titolo, artista, ordine = 'asc', approfond
       titolo: scoperta.titoloCanonico,
       artista: scoperta.artistaOriginale,
       compositore: scoperta.compositore,
+      crediti: scoperta.creditiOriginale || [],
       anno: scoperta.annoOriginale,
       lingua: scoperta.linguaOriginale,
       idMusicBrainz: scoperta.idMusicBrainz,
@@ -340,7 +342,7 @@ export async function cercaAncoraVersioni({ titolo, artista, ordine = 'asc', off
   await registraRicerca(db, {
     titolo, artista, composizioneId: nota.id, candidati: elenco.registrazioni.length,
     risultatiValidi: nuove.length, durataMs,
-    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.6.1', provenienza: 'cerca ancora'
+    versioneAlgoritmo: env.VERSIONE_MOTORE || '0.7.2', provenienza: 'cerca ancora'
   });
 
   return {

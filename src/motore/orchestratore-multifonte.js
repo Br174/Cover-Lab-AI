@@ -50,6 +50,14 @@ async function generaNuovePiste(originale, env, db, chiave) {
     agenda
   }, env);
 
+  const diagnosticaPiano = {
+    agenda: agenda.domande || [],
+    strategie: piano.strategie || [],
+    candidatiProposti: piano.candidati || [],
+    recupero: piano.recupero || null,
+    avviso: piano.avviso || null
+  };
+
   if (!piano.disponibile) {
     const strategieNuoveFallback = await salvaStrategieScoperta(db, chiave, piano.strategie || []);
     return {
@@ -58,6 +66,8 @@ async function generaNuovePiste(originale, env, db, chiave) {
       candidatiNuovi: 0,
       agendaDomande: agenda.domande.length,
       domandeEsplorate: piano.domandeEsplorate || [],
+      nuoveDomande: piano.nuoveDomande || [],
+      ...diagnosticaPiano,
       esaurita: false
     };
   }
@@ -68,6 +78,7 @@ async function generaNuovePiste(originale, env, db, chiave) {
       strategieNuove: 0,
       candidatiNuovi: 0,
       agendaDomande: agenda.domande.length,
+      ...diagnosticaPiano,
       esaurita: false
     };
   }
@@ -91,8 +102,7 @@ async function generaNuovePiste(originale, env, db, chiave) {
     domandeEsplorate: piano.domandeEsplorate || [],
     nuoveDomande: piano.nuoveDomande || [],
     agendaEsaurita: piano.esaurita === true,
-    recupero: piano.recupero || null,
-    avviso: piano.avviso || null,
+    ...diagnosticaPiano,
     esaurita: false
   };
 }

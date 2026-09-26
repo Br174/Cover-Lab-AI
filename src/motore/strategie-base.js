@@ -28,30 +28,31 @@ export function generaStrategieDeterministiche(originale = {}) {
   const elenco = [];
   const viste = new Set();
 
-  // Wikipedia/MediaWiki e una fonte di scoperta editoriale: la query usa il
-  // titolo canonico per aprire la voce del brano e leggere sezioni Cover/Versioni.
+  // Fonti editoriali/enciclopediche pubbliche.
   aggiungi(elenco, viste, 'wikipedia', titolo, 99, lingua, paese);
+  aggiungi(elenco, viste, 'web_editoriale', `"${titolo}" "${artista}"`, 91, lingua, paese);
 
-  // YouTube e' una fonte di scoperta. Non viene usato per cercare apposta
-  // il video di una cover trovata altrove: queste query appartengono al giro
-  // autonomo di scoperta YouTube del motore.
+  // YouTube resta una fonte opzionale di scoperta/verifica quando configurata.
   aggiungi(elenco, viste, 'youtube', `${titolo} ${artista}`, 100, lingua, paese);
   aggiungi(elenco, viste, 'youtube', `${titolo} cover`, 96, lingua, paese);
   aggiungi(elenco, viste, 'youtube', `${titolo} ${artista} cover`, 94, lingua, paese);
 
-  // Cataloghi: Apple oggi, altri cataloghi potranno condividere lo stesso
-  // concetto di strategia senza cambiare il cervello centrale.
+  // Cataloghi pubblici: Apple + Deezer sono interrogati separatamente e
+  // conservano sempre la loro provenienza.
   aggiungi(elenco, viste, 'cataloghi', `${titolo} ${artista}`, 100, lingua, paese);
   aggiungi(elenco, viste, 'cataloghi', titolo, 88, lingua, paese);
+  aggiungi(elenco, viste, 'deezer', `${titolo} ${artista}`, 99, lingua, paese);
+  aggiungi(elenco, viste, 'deezer', titolo, 87, lingua, paese);
 
-  // Archivi pubblici: fonte informativa, mai sorgente di riproduzione in Cover Lab.
-  aggiungi(elenco, viste, 'internet_archive', `${titolo} ${artista}`, 92, lingua, paese);
-  aggiungi(elenco, viste, 'internet_archive', `${titolo} cover`, 84, lingua, paese);
+  // Archivi pubblici: utili come pista, con priorita piu bassa per ridurre falsi positivi.
+  aggiungi(elenco, viste, 'internet_archive', `${titolo} ${artista}`, 78, lingua, paese);
+  aggiungi(elenco, viste, 'internet_archive', `${titolo} cover`, 70, lingua, paese);
 
   if (compositore && normalizzaTesto(compositore) !== normalizzaTesto(artista)) {
-    aggiungi(elenco, viste, 'youtube', `${titolo} ${compositore}`, 90, lingua, paese);
-    aggiungi(elenco, viste, 'cataloghi', `${titolo} ${compositore}`, 90, lingua, paese);
-    aggiungi(elenco, viste, 'internet_archive', `${titolo} ${compositore}`, 82, lingua, paese);
+    aggiungi(elenco, viste, 'web_editoriale', `"${titolo}" "${compositore}"`, 86, lingua, paese);
+    aggiungi(elenco, viste, 'deezer', `${titolo} ${compositore}`, 84, lingua, paese);
+    aggiungi(elenco, viste, 'cataloghi', `${titolo} ${compositore}`, 84, lingua, paese);
+    aggiungi(elenco, viste, 'internet_archive', `${titolo} ${compositore}`, 68, lingua, paese);
   }
 
   return elenco;
@@ -74,6 +75,16 @@ export function generaStrategieFallback(originale = {}, providerId, strategieGia
 
   if (provider === 'wikipedia') {
     aggiungi(elenco, viste, provider, titolo, 99, lingua, paese);
+    return elenco;
+  }
+
+  if (provider === 'web_editoriale') {
+    aggiungi(elenco, viste, provider, `"${titolo}" "${artista}"`, 95, lingua, paese);
+    aggiungi(elenco, viste, provider, `"${titolo}" cover`, 88, lingua, paese);
+    aggiungi(elenco, viste, provider, `"${titolo}" versione`, 84, lingua, paese);
+    if (compositore && normalizzaTesto(compositore) !== normalizzaTesto(artista)) {
+      aggiungi(elenco, viste, provider, `"${titolo}" "${compositore}"`, 82, lingua, paese);
+    }
     return elenco;
   }
 

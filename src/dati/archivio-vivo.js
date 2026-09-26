@@ -7,6 +7,18 @@ function interoPositivo(valore, ripiego, massimo = 1000) {
   return Math.min(Math.floor(n), massimo);
 }
 
+function creditiComposizioneDaRiga(composizione = {}) {
+  const nomi = String(composizione.compositore || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean);
+  return nomi.map(nome => ({
+    ruolo: 'compositore',
+    nome,
+    fonte: composizione.id_musicbrainz ? 'musicbrainz' : null
+  }));
+}
+
 export async function leggiConfigurazioneArchivioVivo(db) {
   if (!db) return {};
   try {
@@ -198,6 +210,8 @@ export async function paginaVersioniArchiviate(db, {
       id: composizione.id,
       titolo: composizione.titolo_canonico,
       artista: composizione.artista_originale,
+      compositore: composizione.compositore || null,
+      crediti: creditiComposizioneDaRiga(composizione),
       anno: composizione.anno_originale,
       lingua: composizione.lingua_originale,
       idMusicBrainz: composizione.id_musicbrainz

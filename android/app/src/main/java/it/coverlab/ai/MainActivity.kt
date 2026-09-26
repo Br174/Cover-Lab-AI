@@ -1,7 +1,9 @@
 package it.coverlab.ai
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -10,13 +12,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.Locale
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
     private lateinit var ricerca: EditText
     private lateinit var cerca: Button
     private lateinit var cercaAncora: Button
+    private lateinit var diagnostica: Button
+    private lateinit var archivioCloud: Button
     private lateinit var stato: TextView
     private lateinit var riepilogo: TextView
     private lateinit var elenco: LinearLayout
@@ -41,15 +44,32 @@ class MainActivity : Activity() {
         }
 
         radice.addView(TextView(this).apply {
-            text = "Cover Lab AI"
+            text = "Cover Lab AI · LAB 0.8"
             textSize = 28f
             setTypeface(typeface, Typeface.BOLD)
         })
         radice.addView(TextView(this).apply {
-            text = "Prova il motore: cerca una composizione e visualizza le versioni individuate"
+            text = "Ricerca, verifica e diagnostica dell'Archivio Vivo"
             textSize = 14f
-            setPadding(0, dp(4), 0, dp(18))
+            setPadding(0, dp(4), 0, dp(14))
         })
+
+        val strumenti = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        archivioCloud = Button(this).apply {
+            text = "ARCHIVIO CLOUD"
+            setOnClickListener { apriArchivioCloud() }
+        }
+        diagnostica = Button(this).apply {
+            text = "DIAGNOSTICA"
+            isEnabled = false
+            setOnClickListener { apriDiagnostica() }
+        }
+        strumenti.addView(archivioCloud, LinearLayout.LayoutParams(0, dp(50), 1f))
+        strumenti.addView(diagnostica, LinearLayout.LayoutParams(0, dp(50), 1f))
+        radice.addView(strumenti, larghezzaPiena())
 
         ricerca = EditText(this).apply {
             hint = "Titolo, artista, anno…"
@@ -83,11 +103,12 @@ class MainActivity : Activity() {
         radice.addView(soloAltreLingue)
 
         stato = TextView(this).apply {
+            text = "Pronto. L'Archivio Cloud resta nel cloud; l'app mostra solo la ricerca corrente."
             textSize = 13f
             setPadding(0, dp(8), 0, dp(8))
         }
         riepilogo = TextView(this).apply {
-            textSize = 17f
+            textSize = 16f
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(4), 0, dp(8))
         }
@@ -107,6 +128,28 @@ class MainActivity : Activity() {
         return radice
     }
 
+    private fun apriArchivioCloud() {
+        val base = BuildConfig.COVER_LAB_API_BASE.trimEnd('/')
+        if (base.contains("DA_CONFIGURARE")) {
+            Toast.makeText(this, "Archivio Cloud non configurato.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/archivio")))
+    }
+
+    private fun apriDiagnostica() {
+        val titolo = titoloRisolto
+        val artista = artistaRisolto
+        if (titolo.isNullOrBlank() || artista.isNullOrBlank()) {
+            Toast.makeText(this, "Eseguire prima una ricerca.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(this, DiagnosticsActivity::class.java).apply {
+            putExtra("titolo", titolo)
+            putExtra("artista", artista)
+        })
+    }
+
     private fun avviaRicerca(continuazione: Boolean) {
         val q = ricerca.text.toString().trim()
         if (!continuazione && q.isEmpty()) {
@@ -121,25 +164,22 @@ class MainActivity : Activity() {
         val tokenRicerca = if (continuazione) serialeRicerca else ++serialeRicerca
 
         if (!continuazione) {
+            // Nessun catalogo viene conservato nel telefono: una nuova ricerca riparte
+            // dalla situazione reale del cloud e cancella subito il dossier precedente.
             ultimoRisultato = null
             prossimoOffset = null
             titoloRisolto = null
             artistaRisolto = null
+            diagnostica.isEnabled = false
             riepilogo.text = ""
             elenco.removeAllViews()
             cercaAncora.visibility = View.GONE
-            stato.text = "Interpreto la richiesta e cerco le cover…"
-
-            caricaDallaMemoria(q)?.let {
-                ultimoRisultato = it
-                aggiornaIdentitaRisolta(it)
-                mostraRisultato(it, "Dalla memoria del telefono · controllo aggiornamenti in corso…")
-            }
+            stato.text = "Interpreto la richiesta, controllo l'Archivio e avvio la ricerca…"
         }
 
         cerca.isEnabled = false
         cercaAncora.isEnabled = false
-        if (continuazione) stato.text = "Cerco altre versioni…"
+        if (continuazione) stato.text = "Cerco altre versioni e verifico quelle trovate…"
 
         val percorso = if (continuazione) "/api/cerca-ancora" else "/api/ricerca-libera"
         val corpo = JSONObject().apply {
@@ -162,7 +202,6 @@ class MainActivity : Activity() {
                     cercaAncora.isEnabled = true
                     ultimoRisultato = risposta
                     aggiornaIdentitaRisolta(risposta)
-                    if (!continuazione) salvaNellaMemoria(q, risposta)
                     mostraRisultato(risposta)
                 }
             } catch (e: Exception) {
@@ -186,6 +225,7 @@ class MainActivity : Activity() {
         val composizione = risposta.optJSONObject("composizione") ?: return
         titoloRisolto = composizione.optString("titolo").takeIf { it.isNotBlank() && it != "null" }
         artistaRisolto = composizione.optString("artista").takeIf { it.isNotBlank() && it != "null" }
+        diagnostica.isEnabled = !titoloRisolto.isNullOrBlank() && !artistaRisolto.isNullOrBlank()
     }
 
     private fun chiamaMotore(percorso: String, corpo: JSONObject): JSONObject {
@@ -195,8 +235,8 @@ class MainActivity : Activity() {
         }
         val conn = (URL(base + percorso).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 6000
-            readTimeout = 65000
+            connectTimeout = 7000
+            readTimeout = 90000
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
@@ -229,18 +269,27 @@ class MainActivity : Activity() {
         val interpretazione = risposta.optJSONObject("ricercaLibera")?.optJSONObject("interpretazione")
         val metodo = interpretazione?.optString("metodo")?.takeIf { it.isNotBlank() }
         stato.text = statoForzato ?: buildString {
-            append(if (risposta.optString("provenienza").contains("memoria")) "Dalla memoria dei risultati" else "Risultato aggiornato")
+            append(if (risposta.optString("provenienza").contains("memoria")) "Archivio consultato e ricerca riaperta" else "Ricerca aggiornata")
             if (durata > 0) append(" · ${durata} ms")
             if (metodo != null) append(" · richiesta interpretata")
         }
-        riepilogo.text = "${risposta.optInt("versioniIndividuate", versioni.length())} versioni individuate"
+
+        val provenienza = risposta.optJSONObject("conteggioProvenienza")
+        val archivio = provenienza?.optInt("archivio", 0) ?: visualizzate.count { provenienzaVersione(it) == "archivio" }
+        val ricercaOra = provenienza?.optInt("ricerca", 0) ?: visualizzate.count { provenienzaVersione(it) == "ricerca" }
+        val inVerifica = risposta.optInt("inVerifica", risposta.optInt("nuoveInVerificaNelGiro", 0))
+        riepilogo.text = buildString {
+            append("${risposta.optInt("versioniIndividuate", versioni.length())} versioni individuate")
+            append(" · Archivio $archivio · Ricerca $ricercaOra")
+            if (inVerifica > 0) append(" · In verifica $inVerifica")
+        }
         elenco.removeAllViews()
 
         if (composizione != null) elenco.addView(creaOriginale(composizione))
 
         if (visualizzate.isEmpty()) {
             elenco.addView(TextView(this).apply {
-                text = if (soloAltreLingue.isChecked) "Nessuna versione in altra lingua ancora individuata." else "Nessuna cover ancora individuata."
+                text = if (soloAltreLingue.isChecked) "Nessuna versione in altra lingua ancora individuata." else "Nessuna cover certificata o candidata ancora individuata."
                 setPadding(0, dp(12), 0, dp(12))
             })
             return
@@ -253,6 +302,10 @@ class MainActivity : Activity() {
         aggiungiSezione("INCISIONI / PUBBLICAZIONI", incisioni)
         aggiungiSezione("PERFORMANCE REGISTRATE", performance)
         aggiungiSezione("DA CLASSIFICARE", daClassificare)
+    }
+
+    private fun provenienzaVersione(v: JSONObject): String {
+        return if (v.optString("provenienzaRisultato").equals("archivio", ignoreCase = true)) "archivio" else "ricerca"
     }
 
     private fun categoriaNatura(v: JSONObject): String {
@@ -321,15 +374,18 @@ class MainActivity : Activity() {
         val paese = v.optString("paese").takeIf { it.isNotBlank() && it != "null" }
         val affidabilita = v.optInt("affidabilita", v.optInt("confidenza", 0))
         val statoVerifica = v.optString("statoVerifica").takeIf { it.isNotBlank() && it != "null" }
+        val statoArchivio = v.optString("statoArchivio").takeIf { it.isNotBlank() && it != "null" }
+        val motivoArchivio = v.optString("motivoArchivio").takeIf { it.isNotBlank() && it != "null" }
         val natura = v.optString("etichettaNaturaVersione").takeIf { it.isNotBlank() && it != "null" }
             ?: when (categoriaNatura(v)) {
                 "incisione_pubblicata" -> "Incisione / pubblicazione"
                 "performance_registrata" -> "Performance registrata"
                 else -> "Natura da verificare"
             }
+        val badge = if (provenienzaVersione(v) == "archivio") "ARCHIVIO" else "RICERCA"
 
         riga.addView(TextView(this).apply {
-            text = v.optString("interprete", "Interprete non indicato")
+            text = "${v.optString("interprete", "Interprete non indicato")}   [$badge]"
             textSize = 17f
             setTypeface(typeface, Typeface.BOLD)
         })
@@ -349,6 +405,10 @@ class MainActivity : Activity() {
         })
         if (statoVerifica != null) riga.addView(TextView(this).apply {
             text = "Verifica: ${statoVerifica.replace('_', ' ')}"
+            textSize = 12f
+        })
+        if (statoArchivio != null && statoArchivio != "archiviata") riga.addView(TextView(this).apply {
+            text = "Archivio: NON ANCORA AMMESSA · ${motivoArchivio ?: "crediti/relazione ancora da verificare"}"
             textSize = 12f
         })
 
@@ -385,24 +445,6 @@ class MainActivity : Activity() {
             if (!elementi.contains(voce)) elementi += voce
         }
         return elementi.joinToString(" · ")
-    }
-
-    private fun chiaveMemoria(query: String): String =
-        (query.trim() + "::" + ordine.selectedItemPosition)
-            .lowercase(Locale.ITALIAN)
-            .replace(Regex("[^a-z0-9àèéìòù: ]"), "")
-            .take(180)
-
-    private fun salvaNellaMemoria(query: String, risposta: JSONObject) {
-        getSharedPreferences("risultati", MODE_PRIVATE)
-            .edit()
-            .putString(chiaveMemoria(query), risposta.toString())
-            .apply()
-    }
-
-    private fun caricaDallaMemoria(query: String): JSONObject? {
-        val testo = getSharedPreferences("risultati", MODE_PRIVATE).getString(chiaveMemoria(query), null) ?: return null
-        return try { JSONObject(testo) } catch (_: Exception) { null }
     }
 
     private fun larghezzaPiena() = LinearLayout.LayoutParams(-1, -2)

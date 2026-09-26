@@ -8,6 +8,7 @@ import { interpretaRicercaLibera } from './motore/ricerca-libera.js';
 import { applicaAutocontrollo } from './motore/self-check.js';
 import { accodaArchivioVivo, paginaVersioniArchiviate } from './dati/archivio-vivo.js';
 import { aggiungiFontiECrediti } from './dati/dettagli-versioni.js';
+import { leggiCreditiComposizione } from './dati/crediti-composizione.js';
 import { leggiSaluteFonti } from './dati/salute-fonti.js';
 
 const INTESTAZIONI = {
@@ -44,8 +45,16 @@ function programma(ctx, promessa) {
   if (ctx?.waitUntil) ctx.waitUntil(protetta);
 }
 
-function creditiComposizione(composizione = {}) {
+async function creditiComposizione(composizione = {}, env = {}) {
   if (Array.isArray(composizione.crediti) && composizione.crediti.length) return composizione.crediti;
+  if (composizione.id && env?.DB) {
+    try {
+      const persistiti = await leggiCreditiComposizione(env.DB, composizione.id);
+      if (persistiti.length) return persistiti;
+    } catch (e) {
+      console.error(e);
+    }
+  }
   return String(composizione.compositore || '')
     .split(',')
     .map(x => x.trim())
@@ -57,9 +66,13 @@ async function arricchisciRisultato(risultato, env) {
   if (!risultato || typeof risultato !== 'object') return risultato;
   const versioniBase = Array.isArray(risultato.versioni) ? risultato.versioni : [];
   const versioni = await aggiungiFontiECrediti(env?.DB, versioniBase);
-  const composizione = risultato.composizione
-    ? { ...risultato.composizione, crediti: creditiComposizione(risultato.composizione) }
-    : risultato.composizione;
+  let composizione = risultato.composizione;
+  if (composizione) {
+    composizione = {
+      ...composizione,
+      crediti: await creditiComposizione(composizione, env)
+    };
+  }
   return { ...risultato, composizione, versioni };
 }
 
@@ -103,14 +116,14 @@ function programmaApprofondimenti(ctx, risultato, parametri, env, motivoCoda = '
 function statoMotore(env, fonti = null) {
   return {
     stato: 'operativo',
-    versione: env.VERSIONE_MOTORE || '0.7.0',
+    versione: env.VERSIONE_MOTORE || '0.7.2',
     archivioVivo: 'predisposto',
     motoreMultifonte: 'predisposto',
     registaAI: descriviRegistaAI(),
     autocontrolloRisultati: 'predisposto',
     ricercaLiberaDiagnostica: 'predisposta',
     classificazioneNaturaVersione: 'pubblicazione_performance_da_verificare',
-    creditiDettagliati: 'predisposti',
+    creditiDettagliati: 'persistenti',
     nessunLimiteTotaleCover: true,
     sourceRouter: 'predisposto',
     circuitBreaker: 'predisposto',

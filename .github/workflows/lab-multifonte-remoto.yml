@@ -45,9 +45,11 @@ jobs:
           assert d.get('nessunLimiteTotaleCover') is True, d
           assert d.get('lottoMusicLab')==20, d
           r=d.get('archivioCertificato') or {}
-          assert r.get('regola')=='relazione_verificata_e_crediti_essenziali', r
+          assert r.get('regola')=='fonte_reale_verifica_e_arricchimento_progressivo', r
           assert r.get('sogliaMinimaAffidabilita')==90, r
           assert r.get('originaliConteggiatiComeCover') is False, r
+          assert r.get('creditiMancantiBloccanoArchivio') is False, r
+          assert r.get('youtube')=='ammissibile_dopo_verifica_intelligente', r
           PY
 
           echo "--- ARCHIVIO CLOUD ---"
@@ -94,7 +96,7 @@ jobs:
           assert p.get('stato') not in ('errore_ia','ia_non_disponibile'), p
           v=(d.get('giroDiagnostico') or {}).get('verifica') or {}
           assert v.get('stato')!='migrazione_verifica_non_applicata', v
-          print('giro',giro,'piano=',p.get('stato'),'candidate=',d.get('inVerifica',d.get('nuoveInVerificaNelGiro',0)),'cover=',len(d.get('versioni') or []))
+          print('giro',giro,'piano=',p.get('stato'),'candidate=',d.get('inVerifica',d.get('nuoveInVerificaNelGiro',0)),'cover=',len(d.get('versioni') or []),'promosse=',v.get('promossi'))
           PY
             sleep 2
           done
@@ -115,8 +117,8 @@ jobs:
           risultati=ac.get('risultati') or []
           assert risultati, ac
           dossier=int(risultati[0].get('versioniArchiviate') or 0)
-          assert dossier>=3, ('Il multifonte non ha ancora portato Sapore di sale ad almeno 3 cover certificate',dossier,stats,ac)
-          print('Archivio Sapore di sale:',dossier,'cover certificate; in verifica globali:',stats.get('versioniInVerifica'))
+          assert dossier>=3, ('Il multifonte non ha ancora portato Sapore di sale ad almeno 3 cover archiviate',dossier,stats,ac)
+          print('Archivio Sapore di sale:',dossier,'cover archiviate; in verifica globali:',stats.get('versioniInVerifica'))
           PY
 
           echo "--- DOSSIER FINALE ---"
@@ -126,17 +128,15 @@ jobs:
           comp=d.get('composizione') or {}
           assert comp.get('crediti'), comp
           versioni=d.get('versioni') or []
-          assert len(versioni)>=3, ('meno di 3 cover certificate nella risposta finale',d)
-          ess={'compositore','paroliere','autore','traduttore','adattatore','arrangiatore'}
+          assert len(versioni)>=3, ('meno di 3 cover archiviate nella risposta finale',d)
           for v in versioni:
               assert v.get('provenienzaRisultato') in ('archivio','ricerca'), v
               assert v.get('statoArchivio')=='archiviata', v
-              assert str(v.get('tipo','')).lower() not in ('originale','dubbio'), v
+              assert str(v.get('tipo','')).lower() not in ('originale','dubbio','non correlato'), v
               assert int(v.get('affidabilita') or 0)>=90, v
               assert str(v.get('statoVerifica','')).lower().startswith('verificato'), v
-              assert any(str(x.get('ruolo','')).lower() in ess for x in v.get('crediti') or []), ('crediti essenziali assenti',v)
               assert v.get('naturaVersione') in ('incisione_pubblicata','performance_registrata','da_classificare'), v
-          print('Dossier finale:',len(versioni),'cover certificate, provenienza',d.get('conteggioProvenienza'))
+          print('Dossier finale:',len(versioni),'cover archiviate, provenienza',d.get('conteggioProvenienza'))
           PY
 
           echo "--- DIAGNOSTICA COMPLETA ---"
@@ -154,7 +154,8 @@ jobs:
           assert salute,('salute provider vuota',d)
           gestore=d.get('gestoreLimitiRegole') or {}
           regole=gestore.get('regole') or []
-          assert len(regole)>=4 and all(x.get('verificatoIl') for x in regole),regole
+          assert len(regole)>=5 and all(x.get('verificatoIl') for x in regole),regole
+          assert any(x.get('provider')=='wikipedia' for x in regole),regole
           assert any(f.get('fonte')=='musicbrainz' and int(f.get('versioniConfermate') or 0)>0 for f in d.get('fonti') or []),d.get('fonti')
           for s in (d.get('strategie') or [])[:20]:
               if '429' in str(s.get('ultimoErrore') or ''):

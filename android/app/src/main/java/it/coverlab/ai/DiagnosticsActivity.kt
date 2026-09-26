@@ -141,6 +141,28 @@ class DiagnosticsActivity : Activity() {
             riga("${p.optString("provider", "fonte")} · ${p.optString("stato", "sconosciuto")}", dettaglio)
         }
 
+        sezione("LIMITI E REGOLE FONTI")
+        val gestore = d.optJSONObject("gestoreLimitiRegole")
+        val regole = gestore?.optJSONArray("regole") ?: JSONArray()
+        if (regole.length() == 0) testoSecondario("Nessuna regola fonte disponibile.")
+        for (i in 0 until regole.length()) {
+            val r = regole.optJSONObject(i) ?: continue
+            val sospeso = r.optString("sospesoFino").takeIf { it.isNotBlank() && it != "null" }
+            val ultimoHttp = r.opt("ultimoHttp")?.toString()?.takeIf { it.isNotBlank() && it != "null" && it != "0" }
+            val dettaglio = buildString {
+                append(r.optString("limiteUfficiale", "limite non numerico documentato"))
+                append("\nconcorrenza ${r.optInt("concorrenzaMassima", 1)} · intervallo minimo ${r.optInt("intervalloMinimoMs", 0)} ms")
+                val quota = r.opt("quotaGiornaliera")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                if (quota != null) append(" · quota $quota/giorno")
+                append("\npolicy verificata ${r.optString("verificatoIl", "non indicata")}")
+                append(" · stato ${r.optString("statoSalute", "non interrogato")}")
+                if (ultimoHttp != null) append(" · ultimo HTTP $ultimoHttp")
+                if (sospeso != null) append("\nsospeso fino a $sospeso")
+                if (r.optBoolean("richiedeRicontrolloPolicy", false)) append("\nRICONTROLLO POLICY RICHIESTO")
+            }
+            riga(r.optString("nome", r.optString("provider", "fonte")), dettaglio)
+        }
+
         sezione("FONTI: CHI HA CONTRIBUITO DAVVERO")
         val fonti = d.optJSONArray("fonti") ?: JSONArray()
         if (fonti.length() == 0) testoSecondario("Nessun contributo ancora registrato.")

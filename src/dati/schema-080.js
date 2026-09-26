@@ -157,33 +157,21 @@ async function assicuraConflitti(db) {
 }
 
 function condizioneArchivioCertificato() {
+  // Regola 0.8 aggiornata: i crediti sono arricchimento progressivo e NON una
+  // barriera d ingresso. L esistenza della versione deve pero partire da una
+  // fonte reale e il motore deve averla portata a uno stato verificato >= 90.
+  // MusicBrainz puo documentare direttamente la relazione tramite id opera;
+  // tutte le altre strade devono lasciare almeno una prova in fonti_verifica.
   return `
-    lower(COALESCE(versioni.tipo,'')) NOT IN ('originale','dubbio')
+    lower(COALESCE(versioni.tipo,'')) NOT IN ('originale','dubbio','non correlato')
     AND versioni.affidabilita >= 90
     AND lower(COALESCE(versioni.stato_verifica,'')) LIKE 'verificato%'
     AND (
-      (
-        versioni.id_opera_musicbrainz IS NOT NULL
-        AND (
-          EXISTS (
-            SELECT 1 FROM crediti_versione cv
-            WHERE cv.versione_id=versioni.id
-              AND lower(cv.ruolo) IN ('compositore','paroliere','autore','traduttore','adattatore','arrangiatore')
-          )
-          OR EXISTS (
-            SELECT 1 FROM crediti_composizione cc
-            WHERE cc.composizione_id=versioni.composizione_id
-              AND lower(cc.ruolo) IN ('compositore','paroliere','autore','traduttore','adattatore','arrangiatore')
-          )
-        )
-      )
-      OR (
-        (SELECT COUNT(DISTINCT lower(fv.fonte)) FROM fonti_verifica fv WHERE fv.versione_id=versioni.id) >= 2
-        AND EXISTS (
-          SELECT 1 FROM crediti_versione cv2
-          WHERE cv2.versione_id=versioni.id
-            AND lower(cv2.ruolo) IN ('compositore','paroliere','autore','traduttore','adattatore','arrangiatore')
-        )
+      versioni.id_opera_musicbrainz IS NOT NULL
+      OR EXISTS (
+        SELECT 1 FROM fonti_verifica fv
+        WHERE fv.versione_id=versioni.id
+          AND trim(COALESCE(fv.fonte,''))<>''
       )
     )
   `;
@@ -192,8 +180,8 @@ function condizioneArchivioCertificato() {
 async function rivalidaArchivio(db) {
   const condizione = condizioneArchivioCertificato();
 
-  // L'originale resta nel database come riferimento della composizione, ma non
-  // viene contato ne mostrato come cover dell'Archivio ufficiale.
+  // L originale resta nel database come riferimento della composizione, ma non
+  // viene contato ne mostrato come cover dell Archivio ufficiale.
   await db.prepare(`
     UPDATE versioni
     SET stato_archivio='riferimento_originale',
@@ -202,12 +190,13 @@ async function rivalidaArchivio(db) {
     WHERE lower(COALESCE(tipo,''))='originale'
   `).run();
 
-  // Se una vecchia versione era stata ammessa con criteri piu deboli, viene
-  // retrocessa: la correttezza dell'Archivio prevale sul numero dei risultati.
+  // Una riga puo restare nell Archivio se e stata verificata a sufficienza e
+  // possiede una relazione strutturata oppure almeno una fonte reale. I crediti
+  // mancanti vengono completati successivamente e non provocano retrocessioni.
   await db.prepare(`
     UPDATE versioni
     SET stato_archivio='in_verifica',
-        motivo_archivio='Rivalidazione 0.8: prove o crediti ancora insufficienti per l Archivio certificato.',
+        motivo_archivio='Rivalidazione 0.8: relazione o fonte reale ancora insufficiente; crediti non bloccanti.',
         data_ammissione_archivio=NULL
     WHERE lower(COALESCE(tipo,''))<>'originale'
       AND NOT (${condizione})
@@ -216,7 +205,7 @@ async function rivalidaArchivio(db) {
   await db.prepare(`
     UPDATE versioni
     SET stato_archivio='archiviata',
-        motivo_archivio='Rivalidazione 0.8: relazione verificata con l opera e crediti essenziali documentati.',
+        motivo_archivio='Rivalidazione 0.8: fonte reale e verifica sufficienti; crediti in arricchimento progressivo.',
         data_ammissione_archivio=COALESCE(data_ammissione_archivio, CURRENT_TIMESTAMP)
     WHERE ${condizione}
   `).run();
@@ -267,7 +256,9 @@ async function applica(db) {
   await rivalidaArchivio(db);
 
   const configurazioni = [
-    ['archivio_richiede_crediti_essenziali', '1'],
+    ['archivio_richiede_crediti_essenziali', '0'],
+    ['archivio_arricchimento_progressivo', '1'],
+    ['archivio_fonte_reale_obbligatoria', '1'],
     ['archivio_soglia_affidabilita', '90'],
     ['strategie_provider_per_giro', '3'],
     ['candidati_verifica_per_giro', '5'],

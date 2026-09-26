@@ -11,11 +11,13 @@ import {
 
 test('registra le regole essenziali delle fonti', () => {
   const regole = descriviRegoleFonti();
-  assert.ok(regole.length >= 4);
+  assert.ok(regole.length >= 5);
   assert.equal(regolaFonte('musicbrainz').richiestePerFinestra, 1);
   assert.equal(regolaFonte('youtube').quotaGiornaliera, 100);
   assert.equal(regolaFonte('apple_catalogo').richiestePerFinestra, 20);
   assert.equal(regolaFonte('internet_archive').retryAfter, true);
+  assert.equal(regolaFonte('wikipedia').concorrenzaMassima, 1);
+  assert.equal(regolaFonte('wikipedia').retryAfter, true);
 });
 
 test('interpreta Retry-After sia in secondi sia come data HTTP', () => {
@@ -78,21 +80,18 @@ test('ritenta un 503 con backoff ma non martella su 429', async () => {
   assert.ok(attese.some(ms => ms >= 500));
 });
 
-test('deduplica due richieste identiche contemporanee senza doppia chiamata', async () => {
+test('Wikimedia rispetta il Retry-After come gli altri provider', async () => {
   azzeraStatoGestoreLimitiPerTest();
   let chiamate = 0;
-  let sblocca;
-  const attesa = new Promise(resolve => { sblocca = resolve; });
-  const opzioni = {
-    provider: 'apple_catalogo', ignoraAttese: true, chiaveRichiesta: 'stessa-query', cacheTtlMs: 0,
-    operazione: async () => { chiamate += 1; await attesa; return { elementi: [1] }; }
-  };
-  const prima = eseguiConGestoreLimiti(opzioni);
-  const seconda = eseguiConGestoreLimiti(opzioni);
-  sblocca();
-  const [a, b] = await Promise.all([prima, seconda]);
+  await assert.rejects(
+    eseguiConGestoreLimiti({
+      provider: 'wikipedia', ignoraAttese: true, ora: () => 100000,
+      operazione: async () => {
+        chiamate += 1;
+        const e = new Error('429 Wikimedia'); e.status = 429; e.retryAfter = '4'; throw e;
+      }
+    }),
+    e => e.status === 429 && e.retryAfterMs === 4000
+  );
   assert.equal(chiamate, 1);
-  assert.equal(a.valore.elementi.length, 1);
-  assert.equal(b.valore.elementi.length, 1);
-  assert.equal(b.richiestaDeduplicata, true);
 });

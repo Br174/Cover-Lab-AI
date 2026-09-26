@@ -1,11 +1,13 @@
 name: LAB 0.8 - Collaudo remoto Cover Lab AI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'lab/archive-diagnostics-080'
     paths:
       - 'src/**'
+      - 'android/**'
       - 'migrations/**'
       - 'wrangler.jsonc'
       - '.github/workflows/lab-multifonte-remoto.yml'

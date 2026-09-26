@@ -161,7 +161,7 @@ test('se la risposta AI non e interpretabile l agenda genera strategie ma nessun
   assert.deepEqual(piano.domandeEsplorate, ['spagna_latam', 'francia']);
 });
 
-test('l IA filtra i risultati di una sorgente senza certificare automaticamente', async () => {
+test('l IA riconosce una corrispondenza reale e la marca come coerenza di fonte', async () => {
   const env = {
     MODELLO_CLASSIFICAZIONE: 'modello-test',
     AI: {
@@ -172,7 +172,7 @@ test('l IA filtra i risultati di una sorgente senza certificare automaticamente'
               {
                 indice: 0, correlato: true, titolo: 'Sapore di sale',
                 interprete: 'Artista Cover', anno: 1982, lingua: 'it',
-                tipo: 'cover', affidabilita: 97, motivo: 'titolo e descrizione coerenti'
+                tipo: 'cover', affidabilita: 97, motivo: 'titolo, interprete e descrizione coerenti'
               },
               { indice: 1, correlato: false }
             ]
@@ -195,7 +195,8 @@ test('l IA filtra i risultati di una sorgente senza certificare automaticamente'
   assert.equal(risultati.length, 1);
   assert.equal(risultati[0].indice, 0);
   assert.equal(risultati[0].interprete, 'Artista Cover');
-  assert.equal(risultati[0].affidabilita, 85, 'anche il filtro di sorgente resta candidato da verificare');
+  assert.equal(risultati[0].affidabilita, 90, 'il filtro di fonte puo esprimere una coerenza forte senza certificare da solo la memoria AI');
+  assert.equal(risultati[0].coerenzaFonteAI, true);
 });
 
 test('il fallback deterministico crea solo una pista quando titolo coincide e interprete e diverso', async () => {

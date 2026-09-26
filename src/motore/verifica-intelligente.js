@@ -57,7 +57,8 @@ export async function verificaCandidatoConIA({ candidato, originale, fonti = [],
     titolo: f.titoloFonte || null,
     descrizione: f.descrizione || null,
     data: f.dataPubblicazione || null,
-    id: f.idEsterno || null
+    id: f.idEsterno || null,
+    indirizzo: f.indirizzo || null
   }));
 
   const messaggi = [
@@ -65,12 +66,15 @@ export async function verificaCandidatoConIA({ candidato, originale, fonti = [],
       role: 'system',
       content: [
         'Sei il passaggio di ARRICCHIMENTO di Cover Lab AI.',
-        'Esiste gia almeno una fonte reale associata al candidato. Se il motore lo ha gia confermato, non devi rimettere in discussione la sua esistenza.',
+        'Esiste gia almeno una fonte reale associata al candidato. Se il motore lo ha gia confermato, non devi rimettere in discussione la sua esistenza salvo un conflitto evidente.',
         'Il tuo compito principale e classificare meglio la natura della versione e completare soltanto i crediti mancanti.',
         'Puoi usare la tua conoscenza musicale interna per proporre compositore, paroliere, autore, adattatore, traduttore, arrangiatore o produttore mancanti.',
+        'Non ripetere come nuovi i crediti gia presenti in creditiOriginale quando non serve.',
         'I crediti che aggiungi saranno marcati come arricchimento AI e potranno essere rivalidati in seguito da una fonte esterna.',
-        'Il campo confermato indica solo una coerenza supplementare tra candidato, fonte e composizione; non e un veto su una conferma gia ottenuta dal motore.',
-        'Se noti chiaramente un omonimo o una relazione diversa, segnala confermato=false e spiega il motivo: il motore usera questa informazione come diagnostica o controllo supplementare.',
+        'ATTENZIONE AUTORI/INTERPRETI: se il nome indicato come interprete coincide con uno o piu autori, compositori o parolieri della composizione, non considerare i crediti di scrittura una prova di esecuzione.',
+        'In quel caso usa confermato=true solo se la fonte identifica esplicitamente quelle persone come performer, artista, cantante, vocalist o interprete di una registrazione reale. Se la fonte li cita soltanto come writer/composer/lyricist, usa confermato=false.',
+        'Il campo confermato indica una coerenza supplementare tra candidato, fonte e composizione; non e normalmente un veto su una conferma gia ottenuta dal motore, ma un conflitto autore/interprete deve essere segnalato.',
+        'Se noti chiaramente un omonimo o una relazione diversa, segnala confermato=false e spiega il motivo.',
         'Rispondi esclusivamente JSON con: confermato, tipo, affidabilita, motivo, crediti[].'
       ].join(' ')
     },

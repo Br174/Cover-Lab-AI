@@ -41,7 +41,7 @@ PURPOSE
 Persistent Cover Lab AI hook. Every recognizable Cover Lab AI chat activates MotorLab first, then loads and preserves the native Cover Lab engine, reconciles the central Cover Lab AI continuity ledger with live GitHub state, and resumes latest verified work without a transfer prompt.
 
 MANDATORY RULES
-1. MotorLab activates before substantive Cover Lab AI work and first visible line is "⚙️ MotorLab attivo".
+1. MotorLab activates before substantive Cover Lab AI work and first visible line is "⚙️ MotorLab rNN attivo".
 2. After MotorLab activation, preserve/load the Cover Lab native/domain engine; MotorLab must never replace it.
 3. No recurring activation/transfer prompt is required.
 4. Load MOTORLAB_PROJECT_STATE_COVER_LAB_AI_V1.txt and reconcile live repo/ref/head/jobs/artifacts before choosing a starting point.

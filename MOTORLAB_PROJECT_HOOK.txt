@@ -73,3 +73,19 @@ MOTORLAB_USER_PROMPT_BOOTSTRAP=required
 
 MOTORLAB_BUILD_MICRO_ACCELERATION=non_compiler_only
 MOTORLAB_KOTLIN_KSP_TUNING=explicit_approval_only
+
+DORMANT PROJECT OVERRIDE — APPROVED 2026-10-10
+PROJECT_STATUS=DORMANT_RESERVED
+ACTIVE_DEVELOPMENT=false
+AUTOMATIC_MOTORLAB_UPDATES=disabled
+MOTORLAB_FANOUT_ELIGIBLE=false
+BIDIRECTIONAL_SYNC_ELIGIBLE=false
+AUTO_REACTIVATION=forbidden
+CURRENT_SATELLITE_RELEASE=2026.10.08-r34
+LAST_GOOD=preserve
+GITHUB_SOURCE_AND_HISTORY=preserve
+CLOUDFLARE_WORKER_D1=preserve_until_explicit_future_decision
+GITHUB_ACTIONS_AUTOMATIC_BUILD_TEST=disabled
+APP_RUNTIME_AND_DATA=unchanged
+REACTIVATE=explicit_user_approval_plus_safe_boundary_and_security_check
+PRECEDENCE=This project-specific dormant override supersedes generic all-project onboarding, automatic re-entry, active project continuity and fanout obligations for this reserved project until reactivated. Historic instructions remain for future authorized reconversion only. MusicLab Cover is a completely separate project.

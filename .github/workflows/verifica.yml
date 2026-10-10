@@ -1,13 +1,8 @@
 name: Verifica motore
 
+# DORMANT_RESERVED since 2026-10-10: no automatic events; manual diagnostic only.
 on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - '.motorlab/**'
-      - 'MOTORLAB_PROJECT_HOOK.txt'
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
